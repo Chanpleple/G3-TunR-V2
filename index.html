@@ -81,8 +81,8 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,#8
 #log div{color:#7f95ab}
 #log .tx{color:#7aa2f7}#log .rx{color:#8fbf8f}#log .ok{color:#5ed08a}
 #log .err{color:#f08a8a}#log .hd{color:#c8b273}
-#selftest div{font-family:var(--mono);font-size:12px;padding:2px 0;color:var(--dim)}
-#selftest .pass{color:#5ed08a}#selftest .fail{color:#f08a8a}
+#selftest div,#calibOut div{font-family:var(--mono);font-size:12px;padding:2px 0;color:var(--dim)}
+#selftest .pass,#calibOut .pass{color:#5ed08a}#selftest .fail,#calibOut .fail{color:#f08a8a}
 .sep{height:1px;background:var(--line);margin:14px 0}
 footer{color:var(--dim2);font-size:11.5px;line-height:1.6;margin-top:22px;border-top:1px solid var(--line);padding-top:14px}
 footer a{color:var(--dim)}
@@ -95,7 +95,7 @@ details[open] summary{margin-bottom:10px}
 
 <header>
   <h1>G3 <span>TunR</span></h1>
-  <div class="sub">Ninebot Max G3 · MCU 1.6.0 · VCU 1.5.8 – 1.6.x · <span class="chip">v1.4</span></div>
+  <div class="sub">Ninebot Max G3 · MCU 1.6.0 · VCU 1.5.8 – 1.6.x · <span class="chip">v1.5</span></div>
 </header>
 
 <div id="banner" class="banner"></div>
@@ -133,7 +133,7 @@ details[open] summary{margin-bottom:10px}
   </div>
   <div id="selftest" style="margin-top:10px"></div>
   <div class="status" id="diagStatus"></div>
-  <p class="note">Self-test checks the crypto round-trip, the frame splitter and the version decoder. Probe lists every service and characteristic without authenticating.</p>
+  <p class="note">Self-test checks the crypto round-trip, the frame splitter, the version decoder and the scale inference. Probe lists every service and characteristic without authenticating.</p>
 </section>
 
 <!-- ============ DEVICE ============ -->
@@ -174,7 +174,7 @@ details[open] summary{margin-bottom:10px}
     </div>
     <div>
       <label class="f" for="customRegion">Custom char</label>
-      <input id="customRegion" maxlength="1" class="mono" placeholder="C" disabled>
+      <input id="customRegion" maxlength="1" class="mono" placeholder="—" disabled>
     </div>
     <div>
       <label class="f" for="speedTarget">Target speed (km/h)</label>
@@ -183,7 +183,7 @@ details[open] summary{margin-bottom:10px}
     <div>
       <label class="f" for="speedScale">Register scale</label>
       <select id="speedScale">
-        <option value="auto">auto (inferred)</option>
+        <option value="auto">auto (calibrated)</option>
         <option value="1">km/h ×1</option>
         <option value="10">×10 (0.1 km/h)</option>
         <option value="100">×100 (0.01 km/h)</option>
@@ -205,7 +205,7 @@ details[open] summary{margin-bottom:10px}
   </div>
   <label class="sw" style="margin-top:10px"><input type="checkbox" id="optReboot" checked><span>Reboot VCU after writing</span></label>
   <div class="status" id="tuneStatus"></div>
-  <p class="note">The cap register is written with an inferred scale, read back, and retried on the second register if the first refuses. The working register and scale are remembered. Rebind in the Segway app after an SN change.</p>
+  <p class="note">Region <b>C</b> is the US code and the only one that lifts the cap. The cap register is found by calibration and remembered; every write is read back.</p>
 </section>
 
 <!-- ============ RIDE ============ -->
@@ -295,6 +295,12 @@ details[open] summary{margin-bottom:10px}
     <button id="btnWriteReg" class="sec sm" disabled>Write</button>
     <button id="btnDump" class="sec sm" disabled>Dump all</button>
   </div>
+  <div class="sep"></div>
+  <div class="row">
+    <button id="btnCalib" class="sec sm" disabled>Calibrate speed reg</button>
+    <button id="btnCalibReset" class="sec sm">Reset calibration</button>
+  </div>
+  <div id="calibOut" style="margin-top:10px"></div>
   <div class="sep"></div>
   <div class="row">
     <button id="btnAcc" class="sec sm" disabled>Open ACC</button>
@@ -684,7 +690,7 @@ class Client {
 
 /* ---------------- state ---------------- */
 let C = null;
-const CONTROLS = ['btnDisconnect','btnForget','btnApply','btnStock','btnRide','btnLights','btnTel','btnAcc',
+const CONTROLS = ['btnDisconnect','btnForget','btnApply','btnStock','btnRide','btnLights','btnTel','btnAcc','btnCalib',
                   'btnReadReg','btnWriteReg','btnDump','btnReboot','btnPowerOff','btnDefaults'];
 const setAll = on => CONTROLS.forEach(id => { const el = $('#' + id); if (el) el.disabled = !on; });
 const keyOf = n => localStorage.getItem(LS + 'key.' + n);
@@ -716,6 +722,21 @@ function checkVersion(w) {
   else banner('VCU ' + v.text + ' — supported.', 'ok');
 }
 
+/* ---------------- speed scale helpers ---------------- */
+const SCALES = [100, 10, 1];
+const CAND_REGS = [0x46, 0x45, 0x4f, 0x50, 0x51, 0x60, 0x6d, 0x6f, 0x72];
+/* pick the scale that maps a raw value into a sane km/h window, or null */
+function plausibleScale(v) {
+  if (!v) return null;
+  for (const s of SCALES) {
+    const kmh = v / s;
+    if (kmh >= 5 && kmh <= 90) return s;
+  }
+  return null;
+}
+const speedCfg = () => JSON.parse(localStorage.getItem(LS + 'speedcfg') || 'null');
+const setSpeedCfg = c => localStorage.setItem(LS + 'speedcfg', JSON.stringify(c));
+
 /* ---------------- self-test ---------------- */
 $('#btnSelfTest').onclick = async () => {
   const box = $('#selftest');
@@ -745,18 +766,10 @@ $('#btnSelfTest').onclick = async () => {
     if (isSupported(0x0158) !== true) throw new Error('1.5.8 rejected');
     if (isSupported(0x0157) !== false) throw new Error('1.5.7 accepted');
   });
-  await run('scale infer: 5654 = 56.54 km/h', () => {
-    const e = inferEncoding(5654, 5654);
-    if (e.scale !== 100) throw new Error('picked scale ' + e.scale);
-  });
-  await run('scale infer: 40 = 40 km/h', () => {
-    const e = inferEncoding(40, 40);
-    if (e.scale !== 1) throw new Error('picked scale ' + e.scale);
-  });
-  await run('scale infer: 400 = 40.0 km/h', () => {
-    const e = inferEncoding(400, 400);
-    if (e.scale !== 10) throw new Error('picked scale ' + e.scale);
-  });
+  await run('scale: 5654 → ×100', () => { if (plausibleScale(5654) !== 100) throw new Error('wrong scale'); });
+  await run('scale: 400 → ×10', () => { if (plausibleScale(400) !== 10) throw new Error('wrong scale'); });
+  await run('scale: 40 → ×1', () => { if (plausibleScale(40) !== 1) throw new Error('wrong scale'); });
+  await run('scale: 0 → none', () => { if (plausibleScale(0) !== null) throw new Error('accepted 0'); });
   await run('frame builder length', () => {
     const f = frame(0x16, 1, 0x57, [2]);
     if (f.length !== 8 || f[2] !== 1) throw new Error('frame wrong: ' + hexs(f));
@@ -772,8 +785,7 @@ $('#btnSelfTest').onclick = async () => {
     const x = new Encryption2(true), y = new Encryption2(true);
     await x.setKey(enc.encode('SELFTEST'), FW); await y.setKey(enc.encode('SELFTEST'), FW);
     const plain = frame(0x16, 1, 0x57, [2]);
-    const wire = await x.encrypt(plain);
-    if (hexs(await y.decrypt(wire)) !== hexs(plain)) throw new Error('mismatch');
+    if (hexs(await y.decrypt(await x.encrypt(plain))) !== hexs(plain)) throw new Error('mismatch');
   });
   await run('encrypted round-trip + counter', async () => {
     const x = new Encryption2(true), y = new Encryption2(true);
@@ -914,7 +926,8 @@ async function refreshDevice() {
     $('#snText').value = sn;
     $('#regionSel').value = 'ABCDEF'.includes(sn[4]) ? sn[4] : 'custom';
     $('#customRegion').disabled = $('#regionSel').value !== 'custom';
-    if ($('#regionSel').value === 'custom') $('#customRegion').value = sn[4] || '';
+    $('#customRegion').placeholder = sn[4] || '—';
+    $('#customRegion').value = $('#regionSel').value === 'custom' ? (sn[4] || '') : '';
     $('#btnRestoreSn').disabled = !localStorage.getItem(LS + 'sn.orig');
   } catch (e) { log('err', 'refresh: ' + e.message); }
 }
@@ -949,45 +962,79 @@ async function writeSN(sn) {
   log('ok', 'SN written: ' + back);
 }
 
-/* ---------------- speed ---------------- */
-const SCALES = [1, 10, 100];
-/* Infer the register unit from the existing value: only a scale that maps it
-   into a sane km/h window is plausible. 5654 → 56.54 km/h, 40 → 40 km/h. */
-function inferEncoding(v46, v45) {
-  const saved = JSON.parse(localStorage.getItem(LS + 'speedcfg') || 'null');
-  if (saved && saved.reg && saved.scale) return saved;
-  const cands = [];
-  for (const [reg, v] of [[0x46, v46], [0x45, v45]]) {
-    for (const s of SCALES) {
-      const kmh = v / s;
-      if (kmh >= 5 && kmh <= 90) cands.push({ reg, scale: s, err: Math.abs(kmh - 35) });
+/* ---------------- calibration ---------------- */
+async function tryWrite(reg, kmh, scale) {
+  const target = Math.round(kmh * scale);
+  const orig = await C.read(0x16, reg);
+  await C.write(0x16, reg, target);
+  await sleep(120);
+  const after = await C.read(0x16, reg);
+  const ok = Math.abs(after - target) <= Math.max(2, target * 0.02);
+  if (!ok) { try { await C.write(0x16, reg, orig); } catch {} }
+  return { reg, scale, orig, target, after, ok };
+}
+
+async function calibrate(kmh) {
+  const out = $('#calibOut');
+  out.replaceChildren();
+  const wins = [];
+  for (const reg of CAND_REGS) {
+    for (const scale of SCALES) {
+      if (!C?.authed) return wins;
+      const row = document.createElement('div');
+      row.textContent = '0x' + reg.toString(16) + '  ×' + scale + '  …';
+      out.appendChild(row);
+      let r;
+      try { r = await tryWrite(reg, kmh, scale); }
+      catch (e) { row.textContent = '0x' + reg.toString(16) + '  ×' + scale + '  error: ' + e.message; row.className = 'fail'; continue; }
+      row.className = r.ok ? 'pass' : 'fail';
+      row.textContent = '0x' + reg.toString(16) + '  ×' + scale + '  ' + r.orig + ' → ' + r.after +
+        '  (want ' + r.target + ')  ' + (r.ok ? 'ACCEPTED' : 'rejected' + (r.after === r.orig ? ', restored' : ''));
+      if (r.ok) {
+        wins.push({ reg, scale });
+        log('ok', 'calibration: 0x' + reg.toString(16) + ' accepted ' + kmh + ' km/h at ×' + scale);
+      }
     }
   }
-  cands.sort((a, b) => a.err - b.err);
-  return cands[0] ? { reg: cands[0].reg, scale: cands[0].scale } : { reg: 0x46, scale: 10 };
+  if (wins.length) setSpeedCfg(wins[0]);
+  return wins;
 }
+
+$('#btnCalib').onclick = async () => {
+  const st = $('#toolStatus');
+  st.textContent = 'calibrating — do not touch the scooter…';
+  try {
+    const wins = await calibrate(+$('#speedTarget').value || 30);
+    st.textContent = wins.length
+      ? 'calibrated: register 0x' + wins[0].reg.toString(16) + ' at ×' + wins[0].scale
+      : 'no register accepted the write — send the table';
+    st.style.color = wins.length ? '#5ed08a' : '#f08a8a';
+  } catch (e) { st.textContent = 'error: ' + e.message; st.style.color = '#f08a8a'; }
+};
+$('#btnCalibReset').onclick = () => {
+  localStorage.removeItem(LS + 'speedcfg');
+  $('#calibOut').replaceChildren();
+  $('#toolStatus').textContent = 'calibration cleared';
+};
+
+/* ---------------- speed ---------------- */
 async function writeSpeed(kmh) {
-  const v46 = await C.read(0x16, 0x46), v45 = await C.read(0x16, 0x45);
-  const manual = $('#speedScale').value;
-  const enc0 = manual === 'auto' ? inferEncoding(v46, v45) : { reg: 0x46, scale: +manual };
-  const order = enc0.reg === 0x46 ? [0x46, 0x45] : [0x45, 0x46];
-  let ok = null;
-  for (const reg of order) {
-    const target = Math.round(kmh * enc0.scale);
-    try {
-      await C.write(0x16, reg, target);
-      const back = await C.read(0x16, reg);
-      if (Math.abs(back - target) <= Math.max(2, target * 0.02)) { ok = { reg, target, back }; break; }
-      log('err', 'reg 0x' + reg.toString(16) + ' readback ' + back + ' vs ' + target);
-    } catch (e) { log('err', 'reg 0x' + reg.toString(16) + ': ' + e.message); }
+  let cfg = speedCfg();
+  if ($('#speedScale').value !== 'auto') cfg = { reg: cfg?.reg || 0x46, scale: +$('#speedScale').value };
+  if (!cfg || !cfg.reg) {
+    log('hd', 'no calibration — running sweep at ' + kmh + ' km/h');
+    const wins = await calibrate(kmh);
+    if (!wins.length) throw new Error('no register accepted ' + kmh + ' km/h — see the calibration table');
+    cfg = wins[0];
+    setSpeedCfg(cfg);
   }
-  if (!ok) throw new Error('no cap register accepted ' + kmh + ' km/h at scale ×' + enc0.scale);
-  localStorage.setItem(LS + 'speedcfg', JSON.stringify({ reg: ok.reg, scale: enc0.scale }));
-  log('ok', 'cap ' + kmh + ' km/h → reg 0x' + ok.reg.toString(16) + ' ×' + enc0.scale +
-           ' raw ' + ok.target + ' (readback ' + ok.back + ')');
-  const other = ok.reg === 0x46 ? 0x45 : 0x46;
-  try { await C.write(0x16, other, ok.target); } catch {}
-  return ok;
+  const r = await tryWrite(cfg.reg, kmh, cfg.scale);
+  if (!r.ok) {
+    localStorage.removeItem(LS + 'speedcfg');
+    throw new Error('0x' + cfg.reg.toString(16) + ' readback ' + r.after + ' vs ' + r.target + ' — recalibrate');
+  }
+  log('ok', 'cap ' + kmh + ' km/h → reg 0x' + cfg.reg.toString(16) + ' ×' + cfg.scale + ' raw ' + r.target + ' (readback ' + r.after + ')');
+  return { reg: cfg.reg, target: r.target };
 }
 
 $('#regionSel').onchange = e => {
@@ -1020,7 +1067,7 @@ $('#btnApply').onclick = async () => {
       st.textContent = 'writing SN…';
       try { await writeSN(cur.slice(0, 4) + rc + cur.slice(5)); report.push('region ' + rc); }
       catch (e) { report.push('region FAILED (' + e.message + ')'); log('err', 'region: ' + e.message); }
-    } else report.push('region unchanged (' + cur[4] + ')');
+    } else report.push('region unchanged (' + cur[4] + (rc && rc !== 'C' ? ', not C' : '') + ')');
 
     const target = Math.min(50, Math.max(10, +$('#speedTarget').value || 50));
     st.textContent = 'writing speed cap…';
