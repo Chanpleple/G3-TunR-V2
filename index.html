@@ -81,6 +81,8 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,#8
 #log div{color:#7f95ab}
 #log .tx{color:#7aa2f7}#log .rx{color:#8fbf8f}#log .ok{color:#5ed08a}
 #log .err{color:#f08a8a}#log .hd{color:#c8b273}
+#selftest div{font-family:var(--mono);font-size:12px;padding:2px 0;color:var(--dim)}
+#selftest .pass{color:#5ed08a}#selftest .fail{color:#f08a8a}
 .sep{height:1px;background:var(--line);margin:14px 0}
 footer{color:var(--dim2);font-size:11.5px;line-height:1.6;margin-top:22px;border-top:1px solid var(--line);padding-top:14px}
 footer a{color:var(--dim)}
@@ -93,7 +95,7 @@ details[open] summary{margin-bottom:10px}
 
 <header>
   <h1>G3 <span>TunR</span></h1>
-  <div class="sub">Ninebot Max G3 · MCU 1.6.0 · VCU 1.5.8 – 1.6.x · <span class="chip">v1.1</span></div>
+  <div class="sub">Ninebot Max G3 · MCU 1.6.0 · VCU 1.5.8 – 1.6.x · <span class="chip">v1.2</span></div>
 </header>
 
 <div id="banner" class="banner"></div>
@@ -115,8 +117,21 @@ details[open] summary{margin-bottom:10px}
     <button id="btnForget" class="sec sm" disabled>Forget pairing key</button>
     <span class="chip" id="keyState" style="align-self:center">no key</span>
   </div>
+  <label class="sw" style="margin-top:10px"><input type="checkbox" id="showAll"><span>Show all devices (if the scooter is not listed)</span></label>
   <div class="status" id="connStatus">Scooter off, Segway app fully closed.</div>
   <p class="note">Power on, tap Connect, pick the scooter, then press its power button once when asked. The pairing key stays in this browser.</p>
+</section>
+
+<!-- ============ DIAGNOSTICS ============ -->
+<section class="card">
+  <h2>Diagnostics</h2>
+  <div class="row">
+    <button id="btnSelfTest" class="sec sm">Self-test (no scooter)</button>
+    <button id="btnProbe" class="sec sm">Probe GATT</button>
+  </div>
+  <div id="selftest" style="margin-top:10px"></div>
+  <div class="status" id="diagStatus"></div>
+  <p class="note">Self-test checks the crypto round-trip, the frame splitter and the version decoder. Probe lists every service and characteristic the scooter exposes, without authenticating.</p>
 </section>
 
 <!-- ============ DEVICE ============ -->
@@ -319,6 +334,7 @@ const NORDIC = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const CUSTOM = '6e400001-0000-0000-006e-696e65626f74';
 const W_NORDIC = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
 const W_CUSTOM = '6e400002-0000-0000-006e-696e65626f74';
+const ALL_SVCS = [NORDIC, CUSTOM, 'generic_access', 'generic_attribute', 'device_information', 'battery_service'];
 const LS = 'g3tunr.';
 
 /* ---------------- log ---------------- */
@@ -416,12 +432,11 @@ class Client {
     this.pending = null; this.authed = false; this.listeners = [];
     this.rxChain = Promise.resolve(); this.buffer = new FrameBuffer(); this.session = 0;
   }
-  async choose() {
-    const optionalServices = [NORDIC, CUSTOM, 'generic_access'];
-    this.device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [NORDIC] }, { services: [CUSTOM] }, { namePrefix: '1C' }],
-      optionalServices
-    });
+  async choose(all) {
+    const optionalServices = ALL_SVCS;
+    this.device = await navigator.bluetooth.requestDevice(all
+      ? { acceptAllDevices: true, optionalServices }
+      : { filters: [{ services: [NORDIC] }, { services: [CUSTOM] }, { namePrefix: '1C' }], optionalServices });
     return this.device;
   }
   async connect(storedKey, nameOv) {
@@ -488,6 +503,7 @@ class Client {
       const s = await this.server.getPrimaryService('generic_access');
       name = dec.decode(await s.getCharacteristic('gap.device_name').readValue()).replaceAll('\0', '').trim() || name;
     } catch {}
+    if (!name) name = (prompt('Full Bluetooth name of the scooter:') || '').trim();
     if (!name) throw new Error('device name missing — type the full BLE name');
     this.name = name;
     log('hd', 'BLE name: ' + name);
@@ -495,25 +511,26 @@ class Client {
     let pre;
     for (const opt of [{ gen2: true, sync: 0xa5, w: W_NORDIC }, { gen2: false, sync: 0xb5, w: W_CUSTOM }]) {
       const ch = this.channels.get(opt.w);
-      if (!ch) continue;
+      if (!ch) { log('err', 'no write characteristic ' + opt.w); continue; }
       for (const withResp of [false, true]) {
         if (withResp ? !ch.properties.write : !ch.properties.writeWithoutResponse) continue;
         await this.rxChain;
         this.buffer = new FrameBuffer(); this.cipher = new Encryption2(opt.gen2);
         this.sync = opt.sync; this.writeChar = ch; this.withResp = withResp;
         await this.cipher.setKey(enc.encode(name), opt.gen2 ? FW : undefined);
+        log('hd', 'PRE_COMM ' + (opt.gen2 ? 'gen2/Nordic' : 'gen3/Ninebot') + (withResp ? ' with response' : ' no response'));
         try { pre = await this.request(4, 0x5b, 0, [], 0x5b, null, 3000); break; }
         catch (e) { log('err', 'PRE_COMM failed: ' + e.message); if (!this.server?.connected) throw e; }
       }
       if (pre) break;
     }
-    if (!pre) throw new Error('no handshake answer — close the Segway app, power-cycle, retry');
-    if (pre.payload.length < 30) throw new Error('short handshake');
+    if (!pre) throw new Error('no handshake answer — run Probe GATT and check the log');
+    if (pre.payload.length < 30) throw new Error('short handshake (' + pre.payload.length + ' bytes)');
     this.bleBoard = pre.board || 4;
     this.snBytes = pre.payload.slice(16, 30);
     this.cipher.auth = pre.payload.slice(0, 16);
     this.sn = dec.decode(this.snBytes).replaceAll('\0', '');
-    log('ok', 'PRE_COMM ok, BLE board 0x' + this.bleBoard.toString(16) + ', paired flag ' + pre.index);
+    log('ok', 'PRE_COMM ok, BLE board 0x' + this.bleBoard.toString(16) + ', paired flag ' + pre.index + ', SN ' + this.sn);
     this.cipher.sn = true; this.cipher.counter = 1;
 
     let key = storedKey ? Uint8Array.from(storedKey.match(/../g), h => parseInt(h, 16)) : null;
@@ -545,7 +562,7 @@ class Client {
   saveKey(pwd) {
     const h = Array.from(pwd, n => n.toString(16).padStart(2, '0')).join('');
     localStorage.setItem(LS + 'key.' + this.name, h);
-    localStorage.setItem(LS + 'key.__last', h);   // survives an SN / name change
+    localStorage.setItem(LS + 'key.__last', h);
   }
   async auth(key, epoch) {
     await this.cipher.setKey(key, this.cipher.auth);
@@ -637,9 +654,7 @@ const setAll = on => CONTROLS.forEach(id => { const el = $('#' + id); if (el) el
 const keyOf = n => localStorage.getItem(LS + 'key.' + n);
 const lastKey = () => localStorage.getItem(LS + 'key.__last');
 
-/* ---------------- version decode ----------------
-   0x0163 = major 0x01 (BCD) + low byte nibble-packed 6|3 → 1.6.3
-   -------------------------------------------------- */
+/* ---------------- version decode ---------------- */
 function decodeVer(w) {
   if (!w || w === 0xffff) return null;
   const hi = (w >> 8) & 0xff, lo = w & 0xff;
@@ -648,10 +663,15 @@ function decodeVer(w) {
   if ((hi >> 4) > 9 || (hi & 15) > 9 || minor > 9 || patch > 9) return null;
   return { major, minor, patch, text: major + '.' + minor + '.' + patch };
 }
+function isSupported(w) {
+  const v = decodeVer(w);
+  if (!v) return null;
+  return v.major === 1 && (v.minor === 6 || (v.minor === 5 && v.patch >= 8));
+}
 function checkVersion(w) {
   const v = decodeVer(w);
   if (!v) { banner('VCU version unreadable. Check the build in the Segway app before writing.', 'bad'); return; }
-  if (v.major !== 1 || v.minor < 5 || v.minor > 6 || (v.minor === 5 && v.patch < 8)) {
+  if (!isSupported(w)) {
     banner('VCU ' + v.text + ' is outside the supported 1.5.8 – 1.6.x range. Reads should work, writes are untested.', 'bad');
     return;
   }
@@ -659,6 +679,110 @@ function checkVersion(w) {
   else if (v.minor === 6 && v.patch > 3) banner('VCU ' + v.text + ' — supported, but 1.6.4 and newer tighten the region lock.', 'bad');
   else banner('VCU ' + v.text + ' — supported.', 'ok');
 }
+
+/* ---------------- self-test ---------------- */
+$('#btnSelfTest').onclick = async () => {
+  const box = $('#selftest');
+  box.replaceChildren();
+  const add = (name, ok, info) => {
+    const d = document.createElement('div');
+    d.className = ok ? 'pass' : 'fail';
+    d.textContent = (ok ? 'PASS  ' : 'FAIL  ') + name + (info ? '  — ' + info : '');
+    box.appendChild(d);
+  };
+  const run = async (name, fn) => { try { await fn(); add(name, true); } catch (e) { add(name, false, e.message); } };
+
+  await run('decode 0x0163 = 1.6.3', () => {
+    const v = decodeVer(0x0163);
+    if (!v || v.text !== '1.6.3') throw new Error('got ' + JSON.stringify(v));
+  });
+  await run('decode 0x0160 = 1.6.0', () => {
+    const v = decodeVer(0x0160);
+    if (!v || v.text !== '1.6.0') throw new Error('got ' + JSON.stringify(v));
+  });
+  await run('gate: 1.6.3 supported', () => { if (isSupported(0x0163) !== true) throw new Error('rejected'); });
+  await run('gate: 1.6.4 supported + flagged', () => {
+    if (isSupported(0x0164) !== true) throw new Error('rejected');
+    const v = decodeVer(0x0164);
+    if (v.patch !== 4) throw new Error('patch misread');
+  });
+  await run('gate: 1.5.8 supported / 1.5.7 not', () => {
+    if (isSupported(0x0158) !== true) throw new Error('1.5.8 rejected');
+    if (isSupported(0x0157) !== false) throw new Error('1.5.7 accepted');
+  });
+  await run('frame builder length', () => {
+    const f = frame(0x16, 1, 0x57, [2]);
+    if (f.length !== 8 || f[2] !== 1) throw new Error('frame wrong: ' + hexs(f));
+  });
+  await run('frame splitter reassembles', () => {
+    const fb = new FrameBuffer();
+    const f = frame(0x16, 1, 0x57, [2]);
+    const a = fb.push(f.slice(0, 4)), b = fb.push(f.slice(4));
+    if (a.length || b.length !== 1) throw new Error('split failed');
+    if (hexs(b[0]) !== hexs(f)) throw new Error('bytes changed');
+  });
+  await run('plain frame round-trip', async () => {
+    const x = new Encryption2(true), y = new Encryption2(true);
+    await x.setKey(enc.encode('SELFTEST'), FW); await y.setKey(enc.encode('SELFTEST'), FW);
+    const plain = frame(0x16, 1, 0x57, [2]);
+    const wire = await x.encrypt(plain);
+    const out = await y.decrypt(wire);
+    if (hexs(out) !== hexs(plain)) throw new Error('mismatch');
+  });
+  await run('encrypted round-trip + counter', async () => {
+    const x = new Encryption2(true), y = new Encryption2(true);
+    await x.setKey(enc.encode('SELFTEST'), FW); await y.setKey(enc.encode('SELFTEST'), FW);
+    x.auth = new Uint8Array(16).fill(7); y.auth = x.auth.slice();
+    x.sn = y.sn = true; y.lastRx = -1;
+    const plain = frame(0x16, 1, 0x57, [2]);
+    const wire = await x.encrypt(plain);
+    if (wire.length !== wire[2] + 13) throw new Error('bad wire length');
+    if (((wire.at(-2) << 8) | wire.at(-1)) !== 1) throw new Error('counter not 1');
+    const out = await y.decrypt(wire);
+    if (hexs(out) !== hexs(plain)) throw new Error('mismatch');
+  });
+  await run('tampered frame rejected', async () => {
+    const x = new Encryption2(true), y = new Encryption2(true);
+    await x.setKey(enc.encode('SELFTEST'), FW); await y.setKey(enc.encode('SELFTEST'), FW);
+    x.auth = new Uint8Array(16).fill(7); y.auth = x.auth.slice();
+    x.sn = y.sn = true; y.lastRx = -1;
+    const wire = await x.encrypt(frame(0x16, 1, 0x57, [2]));
+    wire[6] ^= 0xff;
+    let threw = false;
+    try { await y.decrypt(wire); } catch { threw = true; }
+    if (!threw) throw new Error('tampered frame accepted');
+  });
+
+  const fails = box.querySelectorAll('.fail').length;
+  $('#diagStatus').textContent = fails ? fails + ' test(s) failed' : 'all tests passed';
+  $('#diagStatus').style.color = fails ? '#f08a8a' : '#5ed08a';
+};
+
+/* ---------------- GATT probe ---------------- */
+$('#btnProbe').onclick = async () => {
+  const st = $('#diagStatus');
+  if (!navigator.bluetooth) { st.textContent = 'Web Bluetooth missing'; return; }
+  st.textContent = 'pick the device…'; st.style.color = '';
+  try {
+    const dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: ALL_SVCS });
+    log('hd', 'PROBE ' + (dev.name || '(no name)') + ' ' + dev.id);
+    const srv = await dev.gatt.connect();
+    const list = await srv.getPrimaryServices();
+    for (const s of list) {
+      log('hd', 'svc ' + s.uuid);
+      for (const c of await s.getCharacteristics()) {
+        log('hd', '  char ' + c.uuid + '  write=' + !!c.properties.write +
+          ' wnr=' + !!c.properties.writeWithoutResponse + ' notify=' + !!c.properties.notify + ' indicate=' + !!c.properties.indicate);
+      }
+    }
+    const hasN = list.some(s => s.uuid === NORDIC), hasC = list.some(s => s.uuid === CUSTOM);
+    st.textContent = list.length + ' services · Nordic ' + (hasN ? 'yes' : 'NO') + ' · custom ' + (hasC ? 'yes' : 'NO');
+    st.style.color = (hasN || hasC) ? '#5ed08a' : '#f08a8a';
+    dev.gatt.disconnect();
+  } catch (e) {
+    st.textContent = 'probe error: ' + e.message; st.style.color = '#f08a8a';
+  }
+};
 
 /* ---------------- connect ---------------- */
 $('#btnConnect').onclick = async () => {
@@ -668,7 +792,7 @@ $('#btnConnect').onclick = async () => {
   btn.disabled = true;
   C = new Client();
   try {
-    await C.choose();
+    await C.choose($('#showAll').checked);
     $('#devName').textContent = C.device.name || 'unnamed';
     const stored = keyOf(C.device.name || '') || lastKey();
     say('Connecting…');
