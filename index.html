@@ -26,7 +26,7 @@ body{
   padding:0 14px 64px;
 }
 .wrap{max-width:840px;margin:0 auto}
-header{padding:26px 0 18px;border-bottom:1px solid var(--line);margin-bottom:20px}
+header{padding:26px 0 18px}
 h1{font-size:26px;font-weight:700;margin:0;letter-spacing:-.03em}
 h1 span{color:var(--blue)}
 .sub{color:var(--dim);font-size:13px;margin-top:5px}
@@ -76,7 +76,7 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,#8
 .banner{border:1px solid #5c4413;background:#231a06;color:#f0cf8a;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px;display:none}
 .banner.bad{border-color:#5b2020;background:#220f0f;color:#f3a8a8}
 .banner.ok{border-color:#17462a;background:#0b2416;color:#86e0a8}
-#log{height:210px;overflow:auto;background:#050e18;border:1px solid var(--line);border-radius:8px;
+#log{height:300px;overflow:auto;background:#050e18;border:1px solid var(--line);border-radius:8px;
   padding:9px;font-family:var(--mono);font-size:11.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
 #log div{color:#7f95ab}
 #log .tx{color:#7aa2f7}#log .rx{color:#8fbf8f}#log .ok{color:#5ed08a}
@@ -88,6 +88,15 @@ footer{color:var(--dim2);font-size:11.5px;line-height:1.6;margin-top:22px;border
 footer a{color:var(--dim)}
 details summary{cursor:pointer;font-size:12.5px;color:var(--dim);font-weight:600}
 details[open] summary{margin-bottom:10px}
+
+/* tabs */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:0 0 14px;overflow-x:auto}
+.tab{background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;
+  color:var(--dim);padding:9px 12px;font-size:13px;white-space:nowrap}
+.tab:hover{background:transparent;color:var(--txt)}
+.tab.active{color:#fff;border-bottom-color:var(--blue)}
+.pane{display:none}
+.pane.active{display:block}
 </style>
 </head>
 <body>
@@ -95,12 +104,12 @@ details[open] summary{margin-bottom:10px}
 
 <header>
   <h1>G3 <span>TunR</span></h1>
-  <div class="sub">Ninebot Max G3 · MCU 1.6.0 · VCU 1.5.8 – 1.6.x · <span class="chip">v1.5</span></div>
+  <div class="sub">Ninebot Max G3 · MCU 1.6.0 · VCU 1.5.8 – 1.6.x · <span class="chip">v1.6</span></div>
 </header>
 
 <div id="banner" class="banner"></div>
 
-<!-- ============ CONNECT ============ -->
+<!-- ============ CONNECT (always visible) ============ -->
 <section class="card">
   <h2>Connection</h2>
   <div class="grid">
@@ -124,201 +133,238 @@ details[open] summary{margin-bottom:10px}
   <p class="note">Power on, tap Connect, pick the scooter, then press its power button once when asked. The pairing key stays in this browser.</p>
 </section>
 
-<!-- ============ DIAGNOSTICS ============ -->
-<section class="card">
-  <h2>Diagnostics</h2>
-  <div class="row">
-    <button id="btnSelfTest" class="sec sm">Self-test (no scooter)</button>
-    <button id="btnProbe" class="sec sm">Probe GATT</button>
-  </div>
-  <div id="selftest" style="margin-top:10px"></div>
-  <div class="status" id="diagStatus"></div>
-  <p class="note">Self-test checks the crypto round-trip, the frame splitter, the version decoder and the scale inference. Probe lists every service and characteristic without authenticating.</p>
-</section>
-
-<!-- ============ DEVICE ============ -->
-<section class="card">
-  <h2>Device <span class="tag" id="devName">—</span></h2>
-  <div class="kv">
-    <div><b>BLE</b><i id="verBLE">—</i></div>
-    <div><b>VCU</b><i id="verVCU">—</i></div>
-    <div><b>MCU</b><i id="verMCU">—</i></div>
-    <div><b>BMS</b><i id="verBMS">—</i></div>
-  </div>
-  <div class="sep"></div>
-  <label class="f">Serial number</label>
-  <div class="row">
-    <input id="snText" class="mono" readonly style="flex:1;min-width:190px" value="—">
-    <button id="btnCopySn" class="sec sm">Copy</button>
-    <button id="btnBackupSn" class="sec sm">Backup</button>
-    <button id="btnRestoreSn" class="sec sm" disabled>Restore</button>
-  </div>
-  <p class="note">5th character is the region. Back up before you touch anything.</p>
-</section>
+<nav class="tabs">
+  <button class="tab active" data-tab="speed">Speed</button>
+  <button class="tab" data-tab="ride">Ride</button>
+  <button class="tab" data-tab="lights">Lights</button>
+  <button class="tab" data-tab="data">Live</button>
+  <button class="tab" data-tab="tools">Tools</button>
+  <button class="tab" data-tab="log">Log</button>
+</nav>
 
 <!-- ============ SPEED ============ -->
-<section class="card">
-  <h2>Speed &amp; region <span class="tag">≤ 50 km/h</span></h2>
-  <div class="grid">
-    <div>
-      <label class="f" for="regionSel">Region code</label>
-      <select id="regionSel">
-        <option value="C">C — US / unlocked</option>
-        <option value="B">B — DE / 20 km/h</option>
-        <option value="A">A — EU variant</option>
-        <option value="D">D — EU variant</option>
-        <option value="E">E — EU variant</option>
-        <option value="F">F — EU variant</option>
-        <option value="custom">custom…</option>
-      </select>
+<section class="pane active" id="pane-speed">
+  <div class="card">
+    <h2>Speed <span class="tag">≤ 50 km/h</span></h2>
+    <div class="kv" style="margin-bottom:12px">
+      <div><b>Current cap</b><i id="curCap">—</i></div>
+      <div><b>Register</b><i id="curReg">—</i></div>
+      <div><b>Region</b><i id="curRegion">—</i></div>
     </div>
-    <div>
-      <label class="f" for="customRegion">Custom char</label>
-      <input id="customRegion" maxlength="1" class="mono" placeholder="—" disabled>
+    <div class="grid">
+      <div>
+        <label class="f" for="speedTarget">Target (km/h)</label>
+        <input id="speedTarget" type="number" min="10" max="50" step="1" value="50" class="mono">
+      </div>
+      <div>
+        <label class="f" for="speedScale">Scale</label>
+        <select id="speedScale">
+          <option value="auto">auto</option>
+          <option value="1">×1</option>
+          <option value="10">×10</option>
+          <option value="100">×100</option>
+        </select>
+      </div>
     </div>
-    <div>
-      <label class="f" for="speedTarget">Target speed (km/h)</label>
-      <input id="speedTarget" type="number" min="10" max="50" step="1" value="50" class="mono">
+    <div class="row" style="margin-top:9px">
+      <button class="sec sm" data-spd="20">20</button>
+      <button class="sec sm" data-spd="25">25</button>
+      <button class="sec sm" data-spd="30">30</button>
+      <button class="sec sm" data-spd="35">35</button>
+      <button class="sec sm" data-spd="40">40</button>
+      <button class="sec sm" data-spd="45">45</button>
+      <button class="sec sm" data-spd="50">50</button>
     </div>
-    <div>
-      <label class="f" for="speedScale">Register scale</label>
-      <select id="speedScale">
-        <option value="auto">auto (calibrated)</option>
-        <option value="1">km/h ×1</option>
-        <option value="10">×10 (0.1 km/h)</option>
-        <option value="100">×100 (0.01 km/h)</option>
-      </select>
+    <div class="row" style="margin-top:12px">
+      <button id="btnApply" disabled>Set speed</button>
+      <button id="btnCapRead" class="sec" disabled>Read current</button>
     </div>
+    <div class="status" id="tuneStatus"></div>
+    <p class="note">Two writes when the register is known, three at most on the first run. No sweep, so it stays quiet. The working register is remembered after the first success.</p>
   </div>
-  <div class="row" style="margin-top:9px">
-    <button class="sec sm" data-spd="20">20</button>
-    <button class="sec sm" data-spd="25">25</button>
-    <button class="sec sm" data-spd="30">30</button>
-    <button class="sec sm" data-spd="35">35</button>
-    <button class="sec sm" data-spd="40">40</button>
-    <button class="sec sm" data-spd="45">45</button>
-    <button class="sec sm" data-spd="50">50</button>
+
+  <div class="card">
+    <h2>Region</h2>
+    <div class="grid">
+      <div>
+        <label class="f" for="regionSel">Region code</label>
+        <select id="regionSel">
+          <option value="C">C — US / unlocked</option>
+          <option value="B">B — DE / 20 km/h</option>
+          <option value="A">A — EU variant</option>
+          <option value="D">D — EU variant</option>
+          <option value="E">E — EU variant</option>
+          <option value="F">F — EU variant</option>
+          <option value="custom">custom…</option>
+        </select>
+      </div>
+      <div>
+        <label class="f" for="customRegion">Custom char</label>
+        <input id="customRegion" maxlength="1" class="mono" placeholder="—" disabled>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="btnRegion" class="sec" disabled>Write region</button>
+      <button id="btnStock" class="danger" disabled>Restore stock SN</button>
+    </div>
+    <div class="status" id="regionStatus"></div>
+    <label class="f" style="margin-top:10px">Serial number</label>
+    <div class="row">
+      <input id="snText" class="mono" readonly style="flex:1;min-width:190px" value="—">
+      <button id="btnCopySn" class="sec sm">Copy</button>
+      <button id="btnBackupSn" class="sec sm">Backup</button>
+      <button id="btnRestoreSn" class="sec sm" disabled>Restore</button>
+    </div>
+    <p class="note">5th character is the region. <b>C</b> lifts the cap and unlocks cruise control. Rebind in the Segway app after a change. Reboot after writing.</p>
   </div>
-  <div class="row" style="margin-top:12px">
-    <button id="btnApply" disabled>Apply tune</button>
-    <button id="btnStock" class="danger" disabled>Restore stock SN</button>
-  </div>
-  <label class="sw" style="margin-top:10px"><input type="checkbox" id="optReboot" checked><span>Reboot VCU after writing</span></label>
-  <div class="status" id="tuneStatus"></div>
-  <p class="note">Region <b>C</b> is the US code and the only one that lifts the cap. The cap register is found by calibration and remembered; every write is read back.</p>
 </section>
 
 <!-- ============ RIDE ============ -->
-<section class="card">
-  <h2>Ride behaviour</h2>
-  <div class="grid">
-    <div>
-      <label class="f" for="accel">Acceleration (0x6E)</label>
-      <select id="accel"><option value="">—</option><option value="1">1 · soft</option><option value="2">2 · stock</option><option value="3">3 · hard</option></select>
+<section class="pane" id="pane-ride">
+  <div class="card">
+    <h2>Ride behaviour</h2>
+    <div class="grid">
+      <div>
+        <label class="f" for="accel">Acceleration (0x6E)</label>
+        <select id="accel"><option value="">—</option><option value="1">1 · soft</option><option value="2">2 · stock</option><option value="3">3 · hard</option></select>
+      </div>
+      <div>
+        <label class="f" for="kers">KERS / decel (0x70)</label>
+        <input id="kers" type="number" min="0" max="3" class="mono" placeholder="0–3">
+      </div>
+      <div>
+        <label class="f" for="startSpeed">Start speed (0x42)</label>
+        <input id="startSpeed" type="number" min="0" max="10" class="mono" placeholder="km/h">
+      </div>
+      <div>
+        <label class="f" for="alarm">Alarm sens. (0x74)</label>
+        <input id="alarm" type="number" min="0" max="3" class="mono" placeholder="0–3">
+      </div>
     </div>
-    <div>
-      <label class="f" for="kers">KERS / decel (0x70)</label>
-      <input id="kers" type="number" min="0" max="3" class="mono" placeholder="0–3">
+    <div class="grid" style="margin-top:8px">
+      <label class="sw"><input type="checkbox" id="cruise"><span>Cruise control</span></label>
+      <label class="sw"><input type="checkbox" id="tcs"><span>TCS</span></label>
+      <label class="sw"><input type="checkbox" id="units"><span>Imperial units</span></label>
     </div>
-    <div>
-      <label class="f" for="startSpeed">Start speed (0x42)</label>
-      <input id="startSpeed" type="number" min="0" max="10" class="mono" placeholder="km/h">
-    </div>
-    <div>
-      <label class="f" for="alarm">Alarm sens. (0x74)</label>
-      <input id="alarm" type="number" min="0" max="3" class="mono" placeholder="0–3">
-    </div>
+    <label class="sw" style="margin-top:8px"><input type="checkbox" id="rideStand"><span>Check standstill first (beeps)</span></label>
+    <div class="row" style="margin-top:12px"><button id="btnRide" class="sec" disabled>Write ride settings</button></div>
+    <div class="status" id="rideStatus"></div>
   </div>
-  <div class="grid" style="margin-top:8px">
-    <label class="sw"><input type="checkbox" id="cruise"><span>Cruise control</span></label>
-    <label class="sw"><input type="checkbox" id="tcs"><span>TCS</span></label>
-    <label class="sw"><input type="checkbox" id="units"><span>Imperial units</span></label>
-  </div>
-  <div class="row" style="margin-top:12px"><button id="btnRide" class="sec" disabled>Write ride settings</button></div>
-  <div class="status" id="rideStatus"></div>
 </section>
 
 <!-- ============ LIGHTS ============ -->
-<section class="card">
-  <h2>Lights &amp; display</h2>
-  <div class="grid">
-    <div>
-      <label class="f" for="ledMode">LED mode (0x5B)</label>
-      <input id="ledMode" type="number" min="0" max="15" class="mono" placeholder="raw">
+<section class="pane" id="pane-lights">
+  <div class="card">
+    <h2>Lights &amp; display</h2>
+    <div class="grid">
+      <div>
+        <label class="f" for="ledMode">LED mode (0x5B)</label>
+        <input id="ledMode" type="number" min="0" max="15" class="mono" placeholder="raw">
+      </div>
+      <div>
+        <label class="f" for="tailMode">Tail light (0x5D)</label>
+        <input id="tailMode" type="number" min="0" max="15" class="mono" placeholder="raw">
+      </div>
     </div>
-    <div>
-      <label class="f" for="tailMode">Tail light (0x5D)</label>
-      <input id="tailMode" type="number" min="0" max="15" class="mono" placeholder="raw">
+    <div class="grid" style="margin-top:8px">
+      <label class="sw"><input type="checkbox" id="underglow"><span>Underglow</span></label>
+      <label class="sw"><input type="checkbox" id="breathing"><span>Breathing tail</span></label>
+      <label class="sw"><input type="checkbox" id="autoHead"><span>Auto headlight</span></label>
     </div>
+    <div class="row" style="margin-top:12px"><button id="btnLights" class="sec" disabled>Write lights</button></div>
+    <div class="status" id="lightStatus"></div>
   </div>
-  <div class="grid" style="margin-top:8px">
-    <label class="sw"><input type="checkbox" id="underglow"><span>Underglow</span></label>
-    <label class="sw"><input type="checkbox" id="breathing"><span>Breathing tail</span></label>
-    <label class="sw"><input type="checkbox" id="autoHead"><span>Auto headlight</span></label>
-  </div>
-  <div class="row" style="margin-top:12px"><button id="btnLights" class="sec" disabled>Write lights</button></div>
-  <div class="status" id="lightStatus"></div>
 </section>
 
-<!-- ============ TELEMETRY ============ -->
-<section class="card">
-  <h2>Live data</h2>
-  <div class="kv">
-    <div><b>Speed</b><i id="telSpeed">—</i></div>
-    <div><b>Battery</b><i id="telBatt">—</i></div>
-    <div><b>Temp</b><i id="telTemp">—</i></div>
-    <div><b>Odometer</b><i id="telOdo">—</i></div>
-    <div><b>Error</b><i id="telErr">—</i></div>
+<!-- ============ LIVE ============ -->
+<section class="pane" id="pane-data">
+  <div class="card">
+    <h2>Live data <span class="tag" id="pollState">idle</span></h2>
+    <div class="kv">
+      <div><b>Speed</b><i id="telSpeed">—</i></div>
+      <div><b>Battery</b><i id="telBatt">—</i></div>
+      <div><b>Temp</b><i id="telTemp">—</i></div>
+      <div><b>Odometer</b><i id="telOdo">—</i></div>
+      <div><b>Error</b><i id="telErr">—</i></div>
+    </div>
+    <div class="row" style="margin-top:12px"><button id="btnTel" class="sec" disabled>Start</button></div>
+    <p class="note">Polling reads the beep register 0x57, so it is only active while this tab is open.</p>
   </div>
-  <div class="row" style="margin-top:12px"><button id="btnTel" class="sec" disabled>Start polling</button></div>
 </section>
 
 <!-- ============ TOOLS ============ -->
-<section class="card">
-  <h2>Tools</h2>
-  <div class="grid">
-    <div>
-      <label class="f" for="regBoard">Board</label>
-      <input id="regBoard" class="mono" value="16" maxlength="2">
+<section class="pane" id="pane-tools">
+  <div class="card">
+    <h2>Device</h2>
+    <div class="kv">
+      <div><b>BLE</b><i id="verBLE">—</i></div>
+      <div><b>VCU</b><i id="verVCU">—</i></div>
+      <div><b>MCU</b><i id="verMCU">—</i></div>
+      <div><b>BMS</b><i id="verBMS">—</i></div>
     </div>
-    <div>
-      <label class="f" for="regIndex">Register</label>
-      <input id="regIndex" class="mono" value="57" maxlength="2">
+    <div class="row" style="margin-top:10px">
+      <button id="btnSelfTest" class="sec sm">Self-test</button>
+      <button id="btnProbe" class="sec sm">Probe GATT</button>
     </div>
-    <div>
-      <label class="f" for="regVal">Value</label>
-      <input id="regVal" class="mono" placeholder="dec">
+    <div id="selftest" style="margin-top:10px"></div>
+    <div class="status" id="diagStatus"></div>
+  </div>
+
+  <div class="card">
+    <h2>Raw register</h2>
+    <div class="grid">
+      <div>
+        <label class="f" for="regBoard">Board</label>
+        <input id="regBoard" class="mono" value="16" maxlength="2">
+      </div>
+      <div>
+        <label class="f" for="regIndex">Register</label>
+        <input id="regIndex" class="mono" value="57" maxlength="2">
+      </div>
+      <div>
+        <label class="f" for="regVal">Value</label>
+        <input id="regVal" class="mono" placeholder="dec">
+      </div>
+    </div>
+    <div class="row" style="margin-top:9px">
+      <button id="btnReadReg" class="sec sm" disabled>Read</button>
+      <button id="btnWriteReg" class="sec sm" disabled>Write</button>
+      <button id="btnDump" class="sec sm" disabled>Dump all</button>
+    </div>
+    <div class="status" id="toolStatus"></div>
+  </div>
+
+  <div class="card">
+    <h2>Speed register calibration</h2>
+    <div class="row">
+      <button id="btnCalib" class="sec sm" disabled>Deep scan (beeps)</button>
+      <button id="btnCalibReset" class="sec sm">Reset</button>
+    </div>
+    <div id="calibOut" style="margin-top:10px"></div>
+    <p class="note">Only needed if the normal speed write fails. Tries every candidate register at every scale and restores what it breaks.</p>
+  </div>
+
+  <div class="card">
+    <h2>Actions</h2>
+    <div class="row">
+      <button id="btnAcc" class="sec sm" disabled>Open ACC</button>
+      <button id="btnReboot" class="sec sm" disabled>Reboot VCU</button>
+      <button id="btnPowerOff" class="sec sm" disabled>Power off</button>
+      <button id="btnDefaults" class="danger sm" disabled>Factory reset</button>
     </div>
   </div>
-  <div class="row" style="margin-top:9px">
-    <button id="btnReadReg" class="sec sm" disabled>Read</button>
-    <button id="btnWriteReg" class="sec sm" disabled>Write</button>
-    <button id="btnDump" class="sec sm" disabled>Dump all</button>
-  </div>
-  <div class="sep"></div>
-  <div class="row">
-    <button id="btnCalib" class="sec sm" disabled>Calibrate speed reg</button>
-    <button id="btnCalibReset" class="sec sm">Reset calibration</button>
-  </div>
-  <div id="calibOut" style="margin-top:10px"></div>
-  <div class="sep"></div>
-  <div class="row">
-    <button id="btnAcc" class="sec sm" disabled>Open ACC</button>
-    <button id="btnReboot" class="sec sm" disabled>Reboot VCU</button>
-    <button id="btnPowerOff" class="sec sm" disabled>Power off</button>
-    <button id="btnDefaults" class="danger sm" disabled>Factory reset</button>
-  </div>
-  <div class="status" id="toolStatus"></div>
 </section>
 
 <!-- ============ LOG ============ -->
-<section class="card">
-  <h2>Log</h2>
-  <div id="log"></div>
-  <div class="row" style="margin-top:9px">
-    <button id="btnCopyLog" class="sec sm">Copy</button>
-    <button id="btnSaveLog" class="sec sm">Download</button>
-    <button id="btnClearLog" class="sec sm">Clear</button>
+<section class="pane" id="pane-log">
+  <div class="card">
+    <h2>Log</h2>
+    <div id="log"></div>
+    <div class="row" style="margin-top:9px">
+      <button id="btnCopyLog" class="sec sm">Copy</button>
+      <button id="btnSaveLog" class="sec sm">Download</button>
+      <button id="btnClearLog" class="sec sm">Clear</button>
+    </div>
   </div>
 </section>
 
@@ -328,7 +374,7 @@ details[open] summary{margin-bottom:10px}
   <details style="margin-top:8px"><summary>Register reference</summary>
     <p class="note">VCU 0x16: 0x10 SN · 0x17 VCU ver · 0x18 MCU ver · 0x1D fun flags (bit12 cruise, bit3 imperial, bit0 TCS) ·
     0x1F fun3 (bit2 underglow, bit1 breathing tail, bit0 auto headlight) · 0x20 keepalive · 0x42 start speed · 0x45 eco max · 0x46 sport max ·
-    0x55 battery · 0x57 speed · 0x58 error · 0x59 warn · 0x5B LED · 0x5D tail · 0x62 odo · 0x6B temp · 0x6E accel · 0x70 KERS · 0x74 alarm · 0x79 ACC (0 open, 2 close).
+    0x55 battery · 0x57 speed (beeps) · 0x58 error · 0x59 warn · 0x5B LED · 0x5D tail · 0x62 odo · 0x6B temp · 0x6E accel · 0x70 KERS · 0x74 alarm · 0x79 ACC (0 open, 2 close).
     Board 0x04: 0x51 power (0 off, 1 on, 3 reboot).</p>
   </details>
 </footer>
@@ -690,11 +736,21 @@ class Client {
 
 /* ---------------- state ---------------- */
 let C = null;
-const CONTROLS = ['btnDisconnect','btnForget','btnApply','btnStock','btnRide','btnLights','btnTel','btnAcc','btnCalib',
-                  'btnReadReg','btnWriteReg','btnDump','btnReboot','btnPowerOff','btnDefaults'];
+const CONTROLS = ['btnDisconnect','btnForget','btnApply','btnCapRead','btnRegion','btnStock','btnRide','btnLights','btnTel',
+                  'btnAcc','btnCalib','btnReadReg','btnWriteReg','btnDump','btnReboot','btnPowerOff','btnDefaults'];
 const setAll = on => CONTROLS.forEach(id => { const el = $('#' + id); if (el) el.disabled = !on; });
 const keyOf = n => localStorage.getItem(LS + 'key.' + n);
 const lastKey = () => localStorage.getItem(LS + 'key.__last');
+
+/* ---------------- tabs ---------------- */
+$$('.tab').forEach(t => t.onclick = () => {
+  $$('.tab').forEach(x => x.classList.toggle('active', x === t));
+  $$('.pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + t.dataset.tab));
+  if (t.dataset.tab === 'data') { if (C?.authed) startPoll(); }
+  else stopPoll();
+  if (t.dataset.tab === 'speed') readCap();
+  if (t.dataset.tab === 'tools') refreshDevice();
+});
 
 /* ---------------- version decode ---------------- */
 function decodeVer(w) {
@@ -722,10 +778,9 @@ function checkVersion(w) {
   else banner('VCU ' + v.text + ' — supported.', 'ok');
 }
 
-/* ---------------- speed scale helpers ---------------- */
+/* ---------------- scale helpers ---------------- */
 const SCALES = [100, 10, 1];
 const CAND_REGS = [0x46, 0x45, 0x4f, 0x50, 0x51, 0x60, 0x6d, 0x6f, 0x72];
-/* pick the scale that maps a raw value into a sane km/h window, or null */
 function plausibleScale(v) {
   if (!v) return null;
   for (const s of SCALES) {
@@ -753,15 +808,7 @@ $('#btnSelfTest').onclick = async () => {
     const v = decodeVer(0x0163);
     if (!v || v.text !== '1.6.3') throw new Error('got ' + JSON.stringify(v));
   });
-  await run('decode 0x0160 = 1.6.0', () => {
-    const v = decodeVer(0x0160);
-    if (!v || v.text !== '1.6.0') throw new Error('got ' + JSON.stringify(v));
-  });
   await run('gate: 1.6.3 supported', () => { if (isSupported(0x0163) !== true) throw new Error('rejected'); });
-  await run('gate: 1.6.4 supported + flagged', () => {
-    if (isSupported(0x0164) !== true) throw new Error('rejected');
-    if (decodeVer(0x0164).patch !== 4) throw new Error('patch misread');
-  });
   await run('gate: 1.5.8 supported / 1.5.7 not', () => {
     if (isSupported(0x0158) !== true) throw new Error('1.5.8 rejected');
     if (isSupported(0x0157) !== false) throw new Error('1.5.7 accepted');
@@ -870,7 +917,7 @@ $('#btnConnect').onclick = async () => {
     setAll(true);
     $('#btnReconnect').disabled = true;
     $('#keyState').textContent = 'key stored';
-    await refreshDevice();
+    await readCap();
   } catch (e) {
     log('err', e.message);
     say('Failed: ' + e.message, '#f08a8a');
@@ -888,7 +935,7 @@ $('#btnReconnect').onclick = async () => {
     say('Connected. <b>' + C.name + '</b>', 'var(--green)');
     setAll(true);
     $('#btnReconnect').disabled = true;
-    await refreshDevice();
+    await readCap();
   } catch (e) {
     say('Reconnect failed: ' + e.message, '#f08a8a');
     banner('Reconnect failed: ' + e.message, 'bad');
@@ -922,13 +969,6 @@ async function refreshDevice() {
     $('#verMCU').textContent = fmt(mcu);
     $('#verBMS').textContent = bms === null ? '—' : '0x' + bms.toString(16);
     checkVersion(vcu);
-    const sn = dec.decode(await C.readMulti(0x16, 0x10, 14)).replaceAll('\0', '');
-    $('#snText').value = sn;
-    $('#regionSel').value = 'ABCDEF'.includes(sn[4]) ? sn[4] : 'custom';
-    $('#customRegion').disabled = $('#regionSel').value !== 'custom';
-    $('#customRegion').placeholder = sn[4] || '—';
-    $('#customRegion').value = $('#regionSel').value === 'custom' ? (sn[4] || '') : '';
-    $('#btnRestoreSn').disabled = !localStorage.getItem(LS + 'sn.orig');
   } catch (e) { log('err', 'refresh: ' + e.message); }
 }
 $('#btnCopySn').onclick = () => navigator.clipboard.writeText($('#snText').value);
@@ -942,7 +982,7 @@ $('#btnBackupSn').onclick = () => {
 $('#btnRestoreSn').onclick = async () => {
   const sn = localStorage.getItem(LS + 'sn.orig');
   if (!sn) return;
-  try { await writeSN(sn); await refreshDevice(); log('ok', 'stock SN restored'); }
+  try { await writeSN(sn); await readCap(); log('ok', 'stock SN restored'); }
   catch (e) { log('err', e.message); }
 };
 
@@ -961,80 +1001,82 @@ async function writeSN(sn) {
   $('#regionSel').value = 'ABCDEF'.includes(back[4]) ? back[4] : 'custom';
   log('ok', 'SN written: ' + back);
 }
-
-/* ---------------- calibration ---------------- */
-async function tryWrite(reg, kmh, scale) {
-  const target = Math.round(kmh * scale);
-  const orig = await C.read(0x16, reg);
-  await C.write(0x16, reg, target);
-  await sleep(120);
-  const after = await C.read(0x16, reg);
-  const ok = Math.abs(after - target) <= Math.max(2, target * 0.02);
-  if (!ok) { try { await C.write(0x16, reg, orig); } catch {} }
-  return { reg, scale, orig, target, after, ok };
-}
-
-async function calibrate(kmh) {
-  const out = $('#calibOut');
-  out.replaceChildren();
-  const wins = [];
-  for (const reg of CAND_REGS) {
-    for (const scale of SCALES) {
-      if (!C?.authed) return wins;
-      const row = document.createElement('div');
-      row.textContent = '0x' + reg.toString(16) + '  ×' + scale + '  …';
-      out.appendChild(row);
-      let r;
-      try { r = await tryWrite(reg, kmh, scale); }
-      catch (e) { row.textContent = '0x' + reg.toString(16) + '  ×' + scale + '  error: ' + e.message; row.className = 'fail'; continue; }
-      row.className = r.ok ? 'pass' : 'fail';
-      row.textContent = '0x' + reg.toString(16) + '  ×' + scale + '  ' + r.orig + ' → ' + r.after +
-        '  (want ' + r.target + ')  ' + (r.ok ? 'ACCEPTED' : 'rejected' + (r.after === r.orig ? ', restored' : ''));
-      if (r.ok) {
-        wins.push({ reg, scale });
-        log('ok', 'calibration: 0x' + reg.toString(16) + ' accepted ' + kmh + ' km/h at ×' + scale);
-      }
-    }
+$('#btnRegion').onclick = async () => {
+  const st = $('#regionStatus'); st.textContent = ''; st.style.color = '';
+  const cur = $('#snText').value;
+  if (!cur || cur === '—') { st.textContent = 'SN not read'; return; }
+  const rc = $('#regionSel').value === 'custom'
+    ? ($('#customRegion').value || '').toUpperCase()
+    : $('#regionSel').value;
+  if (!rc || rc === cur[4]) { st.textContent = 'region already ' + cur[4]; return; }
+  if (!localStorage.getItem(LS + 'sn.orig')) {
+    localStorage.setItem(LS + 'sn.orig', cur);
+    $('#btnRestoreSn').disabled = false;
+    log('ok', 'auto-backup: ' + cur);
   }
-  if (wins.length) setSpeedCfg(wins[0]);
-  return wins;
-}
-
-$('#btnCalib').onclick = async () => {
-  const st = $('#toolStatus');
-  st.textContent = 'calibrating — do not touch the scooter…';
   try {
-    const wins = await calibrate(+$('#speedTarget').value || 30);
-    st.textContent = wins.length
-      ? 'calibrated: register 0x' + wins[0].reg.toString(16) + ' at ×' + wins[0].scale
-      : 'no register accepted the write — send the table';
-    st.style.color = wins.length ? '#5ed08a' : '#f08a8a';
+    await writeSN(cur.slice(0, 4) + rc + cur.slice(5));
+    st.textContent = 'region ' + rc + ' written — reboot, then rebind in the Segway app';
+    st.style.color = 'var(--green)';
+    await readCap();
   } catch (e) { st.textContent = 'error: ' + e.message; st.style.color = '#f08a8a'; }
 };
-$('#btnCalibReset').onclick = () => {
-  localStorage.removeItem(LS + 'speedcfg');
-  $('#calibOut').replaceChildren();
-  $('#toolStatus').textContent = 'calibration cleared';
+$('#btnStock').onclick = async () => {
+  const sn = localStorage.getItem(LS + 'sn.orig');
+  if (!sn) return;
+  try { await writeSN(sn); await readCap(); $('#regionStatus').textContent = 'stock SN restored'; }
+  catch (e) { $('#regionStatus').textContent = 'error: ' + e.message; }
 };
 
 /* ---------------- speed ---------------- */
-async function writeSpeed(kmh) {
+async function readCap() {
+  if (!C?.authed) return;
+  try {
+    const cfg = speedCfg();
+    const reg = cfg?.reg || 0x46;
+    const v = await C.read(0x16, reg);
+    const s = cfg?.scale || plausibleScale(v) || 10;
+    $('#curCap').textContent = (v / s).toFixed(1) + ' km/h';
+    $('#curReg').textContent = '0x' + reg.toString(16);
+    const sn = $('#snText').value;
+    $('#curRegion').textContent = sn && sn !== '—' ? sn[4] : '—';
+    if (!sn || sn === '—') {
+      const full = dec.decode(await C.readMulti(0x16, 0x10, 14)).replaceAll('\0', '');
+      $('#snText').value = full;
+      $('#regionSel').value = 'ABCDEF'.includes(full[4]) ? full[4] : 'custom';
+      $('#customRegion').placeholder = full[4] || '—';
+      $('#customRegion').disabled = $('#regionSel').value !== 'custom';
+      $('#curRegion').textContent = full[4];
+      $('#btnRestoreSn').disabled = !localStorage.getItem(LS + 'sn.orig');
+    }
+  } catch (e) { log('err', 'readCap: ' + e.message); }
+}
+$('#btnCapRead').onclick = readCap;
+
+/* two writes when the register is known, three on the first run, then stop */
+async function setSpeed(kmh) {
   let cfg = speedCfg();
-  if ($('#speedScale').value !== 'auto') cfg = { reg: cfg?.reg || 0x46, scale: +$('#speedScale').value };
-  if (!cfg || !cfg.reg) {
-    log('hd', 'no calibration — running sweep at ' + kmh + ' km/h');
-    const wins = await calibrate(kmh);
-    if (!wins.length) throw new Error('no register accepted ' + kmh + ' km/h — see the calibration table');
-    cfg = wins[0];
-    setSpeedCfg(cfg);
+  const manual = $('#speedScale').value;
+  if (manual !== 'auto' && cfg) cfg = { reg: cfg.reg, scale: +manual };
+  const order = cfg?.reg ? [cfg.reg] : [0x46, 0x45, 0x4f];
+  for (const reg of order) {
+    let orig;
+    try { orig = await C.read(0x16, reg); } catch { continue; }
+    const scales = cfg?.scale ? [cfg.scale] : [plausibleScale(orig) || 10];
+    for (const s of scales) {
+      const target = Math.round(kmh * s);
+      await C.write(0x16, reg, target);
+      const back = await C.read(0x16, reg);
+      if (Math.abs(back - target) <= Math.max(2, target * 0.02)) {
+        setSpeedCfg({ reg, scale: s });
+        log('ok', 'cap ' + kmh + ' km/h → 0x' + reg.toString(16) + ' ×' + s + ' raw ' + target + ' (readback ' + back + ')');
+        return { reg, target, back };
+      }
+      log('err', '0x' + reg.toString(16) + ' rejected (' + back + ' vs ' + target + ')');
+      try { await C.write(0x16, reg, orig); } catch {}
+    }
   }
-  const r = await tryWrite(cfg.reg, kmh, cfg.scale);
-  if (!r.ok) {
-    localStorage.removeItem(LS + 'speedcfg');
-    throw new Error('0x' + cfg.reg.toString(16) + ' readback ' + r.after + ' vs ' + r.target + ' — recalibrate');
-  }
-  log('ok', 'cap ' + kmh + ' km/h → reg 0x' + cfg.reg.toString(16) + ' ×' + cfg.scale + ' raw ' + r.target + ' (readback ' + r.after + ')');
-  return { reg: cfg.reg, target: r.target };
+  throw new Error('register refused — run Deep scan in Tools');
 }
 
 $('#regionSel').onchange = e => {
@@ -1045,48 +1087,59 @@ $('#regionSel').onchange = e => {
 $$('[data-spd]').forEach(b => { b.onclick = () => { $('#speedTarget').value = b.dataset.spd; }; });
 
 $('#btnApply').onclick = async () => {
-  if (!C?.authed) return;
-  const st = $('#tuneStatus');
-  st.textContent = ''; st.style.color = '';
-  const report = [];
+  const st = $('#tuneStatus'); st.textContent = ''; st.style.color = '';
+  const target = Math.min(50, Math.max(10, +$('#speedTarget').value || 50));
+  st.textContent = 'writing…';
   try {
-    const spd = await C.read(0x16, 0x57);
-    if (spd > 30) throw new Error('scooter must stand still (reads ' + (spd / 10).toFixed(1) + ' km/h)');
-    const cur = $('#snText').value;
-    if (!cur || cur === '—') throw new Error('SN not read');
-    if (!localStorage.getItem(LS + 'sn.orig')) {
-      localStorage.setItem(LS + 'sn.orig', cur);
-      $('#btnRestoreSn').disabled = false;
-      log('ok', 'auto-backup before first write: ' + cur);
-    }
-    const rc = $('#regionSel').value === 'custom'
-      ? ($('#customRegion').value || '').toUpperCase()
-      : $('#regionSel').value;
-
-    if (rc && rc !== cur[4]) {
-      st.textContent = 'writing SN…';
-      try { await writeSN(cur.slice(0, 4) + rc + cur.slice(5)); report.push('region ' + rc); }
-      catch (e) { report.push('region FAILED (' + e.message + ')'); log('err', 'region: ' + e.message); }
-    } else report.push('region unchanged (' + cur[4] + (rc && rc !== 'C' ? ', not C' : '') + ')');
-
-    const target = Math.min(50, Math.max(10, +$('#speedTarget').value || 50));
-    st.textContent = 'writing speed cap…';
-    try { const r = await writeSpeed(target); report.push(target + ' km/h via 0x' + r.reg.toString(16)); }
-    catch (e) { report.push('speed FAILED (' + e.message + ')'); log('err', 'speed: ' + e.message); }
-
-    const failed = report.some(r => r.includes('FAILED'));
-    st.textContent = report.join(' · ');
-    st.style.color = failed ? '#f08a8a' : 'var(--green)';
-    if (!failed && $('#optReboot').checked) { await sleep(400); await reboot(); }
+    const r = await setSpeed(target);
+    st.textContent = 'set to ' + target + ' km/h · register 0x' + r.reg.toString(16);
+    st.style.color = 'var(--green)';
+    await readCap();
   } catch (e) {
     st.textContent = 'error: ' + e.message; st.style.color = '#f08a8a'; log('err', e.message);
   }
 };
-$('#btnStock').onclick = async () => {
-  const sn = localStorage.getItem(LS + 'sn.orig');
-  if (!sn) return;
-  try { await writeSN(sn); await refreshDevice(); $('#tuneStatus').textContent = 'stock SN restored'; }
-  catch (e) { $('#tuneStatus').textContent = 'error: ' + e.message; }
+
+/* ---------------- calibration (opt-in) ---------------- */
+async function tryWrite(reg, kmh, scale) {
+  const target = Math.round(kmh * scale);
+  const orig = await C.read(0x16, reg);
+  await C.write(0x16, reg, target);
+  await sleep(120);
+  const after = await C.read(0x16, reg);
+  const ok = Math.abs(after - target) <= Math.max(2, target * 0.02);
+  if (!ok) { try { await C.write(0x16, reg, orig); } catch {} }
+  return { reg, scale, orig, target, after, ok };
+}
+$('#btnCalib').onclick = async () => {
+  const st = $('#toolStatus');
+  const out = $('#calibOut');
+  out.replaceChildren();
+  st.textContent = 'scanning — do not touch the scooter…';
+  const kmh = Math.min(50, Math.max(10, +$('#speedTarget').value || 30));
+  const wins = [];
+  for (const reg of CAND_REGS) {
+    for (const scale of SCALES) {
+      if (!C?.authed) break;
+      const row = document.createElement('div');
+      row.textContent = '0x' + reg.toString(16) + ' ×' + scale + ' …';
+      out.appendChild(row);
+      let r;
+      try { r = await tryWrite(reg, kmh, scale); }
+      catch (e) { row.className = 'fail'; row.textContent = '0x' + reg.toString(16) + ' ×' + scale + ' ' + e.message; continue; }
+      row.className = r.ok ? 'pass' : 'fail';
+      row.textContent = '0x' + reg.toString(16) + ' ×' + scale + '  ' + r.orig + ' → ' + r.after + '  ' +
+        (r.ok ? 'ACCEPTED' : 'rejected');
+      if (r.ok) wins.push({ reg, scale });
+    }
+  }
+  if (wins.length) { setSpeedCfg(wins[0]); st.textContent = 'found 0x' + wins[0].reg.toString(16) + ' ×' + wins[0].scale; st.style.color = '#5ed08a'; }
+  else { st.textContent = 'nothing accepted — send the table'; st.style.color = '#f08a8a'; }
+};
+$('#btnCalibReset').onclick = () => {
+  localStorage.removeItem(LS + 'speedcfg');
+  $('#calibOut').replaceChildren();
+  $('#toolStatus').textContent = 'calibration cleared';
 };
 
 /* ---------------- ride ---------------- */
@@ -1102,7 +1155,7 @@ $('#btnRide').onclick = async () => {
   const st = $('#rideStatus'); st.textContent = ''; st.style.color = '';
   const done = [];
   try {
-    if ((await C.read(0x16, 0x57)) > 30) throw new Error('scooter must stand still');
+    if ($('#rideStand').checked && (await C.read(0x16, 0x57)) > 30) throw new Error('scooter must stand still');
     if ($('#accel').value) { await C.write(0x16, 0x6e, +$('#accel').value); done.push('accel'); }
     if ($('#kers').value !== '') { await C.write(0x16, 0x70, +$('#kers').value); done.push('kers'); }
     if ($('#startSpeed').value !== '') { await C.write(0x16, 0x42, +$('#startSpeed').value); done.push('start'); }
@@ -1129,10 +1182,10 @@ $('#btnLights').onclick = async () => {
 
 /* ---------------- telemetry ---------------- */
 let poll = null;
-function stopPoll() { if (poll) { clearInterval(poll); poll = null; } $('#btnTel').textContent = 'Start polling'; }
-$('#btnTel').onclick = () => {
-  if (poll) return stopPoll();
-  $('#btnTel').textContent = 'Stop polling';
+function startPoll() {
+  if (poll) return;
+  $('#pollState').textContent = 'polling';
+  $('#btnTel').textContent = 'Stop';
   poll = setInterval(async () => {
     if (!C?.authed || C.busy) return;
     try {
@@ -1144,7 +1197,13 @@ $('#btnTel').onclick = () => {
       $('#telErr').textContent = 'E' + (await C.read(0x16, 0x58)) + ' / W' + (await C.read(0x16, 0x59));
     } catch {}
   }, 1200);
-};
+}
+function stopPoll() {
+  if (poll) { clearInterval(poll); poll = null; }
+  $('#pollState').textContent = 'idle';
+  $('#btnTel').textContent = 'Start';
+}
+$('#btnTel').onclick = () => (poll ? stopPoll() : startPoll());
 
 /* ---------------- tools ---------------- */
 const pv = id => parseInt($('#' + id).value, 16);
@@ -1165,7 +1224,7 @@ $('#btnAcc').onclick = async () => {
 $('#btnDump').onclick = async () => {
   const st = $('#toolStatus'); st.textContent = 'dumping…';
   const out = { at: new Date().toISOString(), vcu: {}, ble: {} };
-  const list = [[0x16, [0x17,0x18,0x1b,0x1d,0x1e,0x1f,0x2f,0x30,0x32,0x42,0x45,0x46,0x55,0x57,0x58,0x59,0x5a,0x5b,0x5d,0x62,0x6b,0x6e,0x70,0x74], 'vcu'],
+  const list = [[0x16, [0x17,0x18,0x1b,0x1d,0x1e,0x1f,0x2f,0x30,0x32,0x42,0x45,0x46,0x55,0x58,0x59,0x5a,0x5b,0x5d,0x62,0x6b,0x6e,0x70,0x74], 'vcu'],
                 [0x04, [0x01], 'ble']];
   for (const [b, regs, g] of list) for (const r of regs) {
     try { out[g]['0x' + r.toString(16)] = '0x' + (await C.read(b, r)).toString(16); } catch {}
