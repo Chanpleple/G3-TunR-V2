@@ -95,7 +95,7 @@ details[open] summary{margin-bottom:10px}
 
 <header>
   <h1>G3 <span>TunR</span></h1>
-  <div class="sub">Ninebot Max G3 · MCU 1.6.0 · VCU 1.5.8 – 1.6.x · <span class="chip">v1.3</span></div>
+  <div class="sub">Ninebot Max G3 · MCU 1.6.0 · VCU 1.5.8 – 1.6.x · <span class="chip">v1.4</span></div>
 </header>
 
 <div id="banner" class="banner"></div>
@@ -180,6 +180,15 @@ details[open] summary{margin-bottom:10px}
       <label class="f" for="speedTarget">Target speed (km/h)</label>
       <input id="speedTarget" type="number" min="10" max="50" step="1" value="50" class="mono">
     </div>
+    <div>
+      <label class="f" for="speedScale">Register scale</label>
+      <select id="speedScale">
+        <option value="auto">auto (inferred)</option>
+        <option value="1">km/h ×1</option>
+        <option value="10">×10 (0.1 km/h)</option>
+        <option value="100">×100 (0.01 km/h)</option>
+      </select>
+    </div>
   </div>
   <div class="row" style="margin-top:9px">
     <button class="sec sm" data-spd="20">20</button>
@@ -196,7 +205,7 @@ details[open] summary{margin-bottom:10px}
   </div>
   <label class="sw" style="margin-top:10px"><input type="checkbox" id="optReboot" checked><span>Reboot VCU after writing</span></label>
   <div class="status" id="tuneStatus"></div>
-  <p class="note">Writes SN then gear caps 0x45 + 0x46, each read back. Steps run independently, so one failure does not block the rest. Rebind in the Segway app after an SN change.</p>
+  <p class="note">The cap register is written with an inferred scale, read back, and retried on the second register if the first refuses. The working register and scale are remembered. Rebind in the Segway app after an SN change.</p>
 </section>
 
 <!-- ============ RIDE ============ -->
@@ -736,6 +745,18 @@ $('#btnSelfTest').onclick = async () => {
     if (isSupported(0x0158) !== true) throw new Error('1.5.8 rejected');
     if (isSupported(0x0157) !== false) throw new Error('1.5.7 accepted');
   });
+  await run('scale infer: 5654 = 56.54 km/h', () => {
+    const e = inferEncoding(5654, 5654);
+    if (e.scale !== 100) throw new Error('picked scale ' + e.scale);
+  });
+  await run('scale infer: 40 = 40 km/h', () => {
+    const e = inferEncoding(40, 40);
+    if (e.scale !== 1) throw new Error('picked scale ' + e.scale);
+  });
+  await run('scale infer: 400 = 40.0 km/h', () => {
+    const e = inferEncoding(400, 400);
+    if (e.scale !== 10) throw new Error('picked scale ' + e.scale);
+  });
   await run('frame builder length', () => {
     const f = frame(0x16, 1, 0x57, [2]);
     if (f.length !== 8 || f[2] !== 1) throw new Error('frame wrong: ' + hexs(f));
@@ -912,7 +933,7 @@ $('#btnRestoreSn').onclick = async () => {
   catch (e) { log('err', e.message); }
 };
 
-/* ---------------- SN + speed ---------------- */
+/* ---------------- SN ---------------- */
 async function writeSN(sn) {
   if (sn.length !== 14) throw new Error('SN must be 14 characters');
   const payload = enc.encode(sn);
@@ -927,17 +948,48 @@ async function writeSN(sn) {
   $('#regionSel').value = 'ABCDEF'.includes(back[4]) ? back[4] : 'custom';
   log('ok', 'SN written: ' + back);
 }
-const scaleOf = v => (v > 120 ? 10 : 1);
-async function writeSpeed(kmh) {
-  const a = await C.read(0x16, 0x45), b = await C.read(0x16, 0x46);
-  const s = Math.max(scaleOf(a), scaleOf(b));
-  const target = Math.round(kmh * s);
-  await C.write(0x16, 0x46, target);
-  await C.write(0x16, 0x45, target);
-  const back = await C.read(0x16, 0x46);
-  if (Math.abs(back - target) > 1) throw new Error('speed readback ' + back + ' vs ' + target);
-  log('ok', 'gear caps set to ' + kmh + ' km/h (raw ' + target + ')');
+
+/* ---------------- speed ---------------- */
+const SCALES = [1, 10, 100];
+/* Infer the register unit from the existing value: only a scale that maps it
+   into a sane km/h window is plausible. 5654 → 56.54 km/h, 40 → 40 km/h. */
+function inferEncoding(v46, v45) {
+  const saved = JSON.parse(localStorage.getItem(LS + 'speedcfg') || 'null');
+  if (saved && saved.reg && saved.scale) return saved;
+  const cands = [];
+  for (const [reg, v] of [[0x46, v46], [0x45, v45]]) {
+    for (const s of SCALES) {
+      const kmh = v / s;
+      if (kmh >= 5 && kmh <= 90) cands.push({ reg, scale: s, err: Math.abs(kmh - 35) });
+    }
+  }
+  cands.sort((a, b) => a.err - b.err);
+  return cands[0] ? { reg: cands[0].reg, scale: cands[0].scale } : { reg: 0x46, scale: 10 };
 }
+async function writeSpeed(kmh) {
+  const v46 = await C.read(0x16, 0x46), v45 = await C.read(0x16, 0x45);
+  const manual = $('#speedScale').value;
+  const enc0 = manual === 'auto' ? inferEncoding(v46, v45) : { reg: 0x46, scale: +manual };
+  const order = enc0.reg === 0x46 ? [0x46, 0x45] : [0x45, 0x46];
+  let ok = null;
+  for (const reg of order) {
+    const target = Math.round(kmh * enc0.scale);
+    try {
+      await C.write(0x16, reg, target);
+      const back = await C.read(0x16, reg);
+      if (Math.abs(back - target) <= Math.max(2, target * 0.02)) { ok = { reg, target, back }; break; }
+      log('err', 'reg 0x' + reg.toString(16) + ' readback ' + back + ' vs ' + target);
+    } catch (e) { log('err', 'reg 0x' + reg.toString(16) + ': ' + e.message); }
+  }
+  if (!ok) throw new Error('no cap register accepted ' + kmh + ' km/h at scale ×' + enc0.scale);
+  localStorage.setItem(LS + 'speedcfg', JSON.stringify({ reg: ok.reg, scale: enc0.scale }));
+  log('ok', 'cap ' + kmh + ' km/h → reg 0x' + ok.reg.toString(16) + ' ×' + enc0.scale +
+           ' raw ' + ok.target + ' (readback ' + ok.back + ')');
+  const other = ok.reg === 0x46 ? 0x45 : 0x46;
+  try { await C.write(0x16, other, ok.target); } catch {}
+  return ok;
+}
+
 $('#regionSel').onchange = e => {
   const c = e.target.value === 'custom';
   $('#customRegion').disabled = !c;
@@ -952,7 +1004,7 @@ $('#btnApply').onclick = async () => {
   const report = [];
   try {
     const spd = await C.read(0x16, 0x57);
-    if (spd > 3) throw new Error('scooter must stand still (reads ' + (spd / 10).toFixed(1) + ' km/h)');
+    if (spd > 30) throw new Error('scooter must stand still (reads ' + (spd / 10).toFixed(1) + ' km/h)');
     const cur = $('#snText').value;
     if (!cur || cur === '—') throw new Error('SN not read');
     if (!localStorage.getItem(LS + 'sn.orig')) {
@@ -968,14 +1020,14 @@ $('#btnApply').onclick = async () => {
       st.textContent = 'writing SN…';
       try { await writeSN(cur.slice(0, 4) + rc + cur.slice(5)); report.push('region ' + rc); }
       catch (e) { report.push('region FAILED (' + e.message + ')'); log('err', 'region: ' + e.message); }
-    } else report.push('region unchanged');
+    } else report.push('region unchanged (' + cur[4] + ')');
 
     const target = Math.min(50, Math.max(10, +$('#speedTarget').value || 50));
     st.textContent = 'writing speed cap…';
-    try { await writeSpeed(target); report.push(target + ' km/h'); }
+    try { const r = await writeSpeed(target); report.push(target + ' km/h via 0x' + r.reg.toString(16)); }
     catch (e) { report.push('speed FAILED (' + e.message + ')'); log('err', 'speed: ' + e.message); }
 
-    const failed = report.filter(r => r.includes('FAILED')).length;
+    const failed = report.some(r => r.includes('FAILED'));
     st.textContent = report.join(' · ');
     st.style.color = failed ? '#f08a8a' : 'var(--green)';
     if (!failed && $('#optReboot').checked) { await sleep(400); await reboot(); }
@@ -1003,7 +1055,7 @@ $('#btnRide').onclick = async () => {
   const st = $('#rideStatus'); st.textContent = ''; st.style.color = '';
   const done = [];
   try {
-    if ((await C.read(0x16, 0x57)) > 3) throw new Error('scooter must stand still');
+    if ((await C.read(0x16, 0x57)) > 30) throw new Error('scooter must stand still');
     if ($('#accel').value) { await C.write(0x16, 0x6e, +$('#accel').value); done.push('accel'); }
     if ($('#kers').value !== '') { await C.write(0x16, 0x70, +$('#kers').value); done.push('kers'); }
     if ($('#startSpeed').value !== '') { await C.write(0x16, 0x42, +$('#startSpeed').value); done.push('start'); }
