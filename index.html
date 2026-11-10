@@ -1,0 +1,890 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>G3 TunR — Ninebot Max G3 tuner</title>
+<meta name="description" content="Browser tuner for the Ninebot Max G3. Region unlock, 50 km/h, cruise control, KERS, lights. MCU 1.6.0, VCU 1.5.8–1.6.x. No app, no account.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Ctext x='16' y='22' font-family='Inter,sans-serif' font-size='15' font-weight='700' fill='%23fff' text-anchor='middle'%3EG3%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+:root{
+  --bg:#08131f;--panel:#0c1b2b;--panel2:#0a1725;--line:#1c2e42;--line2:#263c53;
+  --txt:#e7eef6;--dim:#8ea3b8;--dim2:#63798f;
+  --blue:#2563eb;--blue-h:#1d4ed8;--red:#dc2626;--green:#22c55e;--amber:#d97706;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--txt);
+  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  font-size:15px;line-height:1.5;letter-spacing:-.01em;
+  -webkit-font-smoothing:antialiased;
+  padding:0 14px 64px;
+}
+.wrap{max-width:840px;margin:0 auto}
+header{padding:26px 0 18px;border-bottom:1px solid var(--line);margin-bottom:20px}
+h1{font-size:26px;font-weight:700;margin:0;letter-spacing:-.03em}
+h1 span{color:var(--blue)}
+.sub{color:var(--dim);font-size:13px;margin-top:5px}
+.chip{display:inline-block;border:1px solid var(--line2);color:var(--dim);font-size:11px;
+  padding:2px 7px;border-radius:5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+.card.flat{background:var(--panel2)}
+h2{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);
+  margin:0 0 12px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+h2 .tag{font-size:10px;font-weight:600;letter-spacing:.05em;color:var(--dim2);border:1px solid var(--line);
+  padding:1px 6px;border-radius:4px;text-transform:none}
+button{
+  font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;
+  background:var(--blue);color:#fff;border:1px solid var(--blue);
+  border-radius:7px;padding:9px 13px;
+}
+button:hover{background:var(--blue-h);border-color:var(--blue-h)}
+button:disabled{opacity:.42;cursor:not-allowed}
+button.sec{background:transparent;color:var(--txt);border-color:var(--line2)}
+button.sec:hover{background:#12253a;border-color:var(--line2)}
+button.danger{background:transparent;color:#fca5a5;border-color:#5b2020}
+button.danger:hover{background:#2a1414}
+button.sm{padding:6px 10px;font-size:12.5px}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+.grid{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(148px,1fr))}
+label.f{display:block;font-size:12px;font-weight:600;color:var(--dim);margin-bottom:5px;letter-spacing:.01em}
+input,select{
+  font:inherit;font-size:14px;width:100%;background:#071220;color:var(--txt);
+  border:1px solid var(--line2);border-radius:7px;padding:8px 10px;
+}
+input:focus,select:focus{outline:none;border-color:var(--blue)}
+input[type=checkbox]{width:auto;margin:0}
+select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,#8ea3b8 50%),linear-gradient(135deg,#8ea3b8 50%,transparent 50%);
+  background-position:calc(100% - 16px) 17px,calc(100% - 11px) 17px;background-size:5px 5px;background-repeat:no-repeat;padding-right:32px}
+.mono{font-family:var(--mono);font-size:12.5px;letter-spacing:0}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.kv>div{background:var(--panel2);padding:9px 11px}
+.kv b{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim2);font-weight:600;margin-bottom:2px}
+.kv i{font-style:normal;font-family:var(--mono);font-size:13px;color:var(--txt)}
+.status{font-size:13px;color:var(--dim);min-height:20px;margin-top:10px}
+.status b{color:var(--txt)}
+.note{font-size:12px;color:var(--dim2);margin:8px 0 0;line-height:1.45}
+.sw{display:flex;align-items:center;gap:9px;padding:9px 10px;border:1px solid var(--line);border-radius:7px;background:var(--panel2)}
+.sw span{font-size:13px;font-weight:500}
+.sw input{accent-color:var(--blue);width:15px;height:15px}
+.banner{border:1px solid #5c4413;background:#231a06;color:#f0cf8a;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px;display:none}
+.banner.bad{border-color:#5b2020;background:#220f0f;color:#f3a8a8}
+.banner.ok{border-color:#17462a;background:#0b2416;color:#86e0a8}
+#log{height:210px;overflow:auto;background:#050e18;border:1px solid var(--line);border-radius:8px;
+  padding:9px;font-family:var(--mono);font-size:11.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+#log div{color:#7f95ab}
+#log .tx{color:#7aa2f7}#log .rx{color:#8fbf8f}#log .ok{color:#5ed08a}
+#log .err{color:#f08a8a}#log .hd{color:#c8b273}
+.sep{height:1px;background:var(--line);margin:14px 0}
+footer{color:var(--dim2);font-size:11.5px;line-height:1.6;margin-top:22px;border-top:1px solid var(--line);padding-top:14px}
+footer a{color:var(--dim)}
+details summary{cursor:pointer;font-size:12.5px;color:var(--dim);font-weight:600}
+details[open] summary{margin-bottom:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>G3 <span>TunR</span></h1>
+  <div class="sub">Ninebot Max G3 · MCU 1.6.0 · VCU 1.5.8 – 1.6.x · <span class="chip">v1.0</span></div>
+</header>
+
+<div id="banner" class="banner"></div>
+
+<!-- ============ CONNECT ============ -->
+<section class="card">
+  <h2>Connection</h2>
+  <div class="grid">
+    <div>
+      <label class="f" for="nameOv">BLE name (only if empty)</label>
+      <input id="nameOv" class="mono" placeholder="1C…" autocomplete="off" spellcheck="false">
+    </div>
+    <div style="display:flex;align-items:flex-end;gap:8px">
+      <button id="btnConnect" style="flex:1">Connect</button>
+      <button id="btnDisconnect" class="sec" disabled>Drop</button>
+    </div>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button id="btnForget" class="sec sm" disabled>Forget pairing key</button>
+    <span class="chip" id="keyState" style="align-self:center">no key</span>
+  </div>
+  <div class="status" id="connStatus">Scooter off, Segway app fully closed.</div>
+  <p class="note">Power on, tap Connect, pick the scooter, then press its power button once when asked. The pairing key stays in this browser.</p>
+</section>
+
+<!-- ============ DEVICE ============ -->
+<section class="card">
+  <h2>Device <span class="tag" id="devName">—</span></h2>
+  <div class="kv">
+    <div><b>BLE</b><i id="verBLE">—</i></div>
+    <div><b>VCU</b><i id="verVCU">—</i></div>
+    <div><b>MCU</b><i id="verMCU">—</i></div>
+    <div><b>BMS</b><i id="verBMS">—</i></div>
+  </div>
+  <div class="sep"></div>
+  <label class="f">Serial number</label>
+  <div class="row">
+    <input id="snText" class="mono" readonly style="flex:1;min-width:190px" value="—">
+    <button id="btnCopySn" class="sec sm">Copy</button>
+    <button id="btnBackupSn" class="sec sm">Backup</button>
+    <button id="btnRestoreSn" class="sec sm" disabled>Restore</button>
+  </div>
+  <p class="note">5th character is the region. Back up before you touch anything.</p>
+</section>
+
+<!-- ============ SPEED ============ -->
+<section class="card">
+  <h2>Speed &amp; region <span class="tag">≤ 50 km/h</span></h2>
+  <div class="grid">
+    <div>
+      <label class="f" for="regionSel">Region code</label>
+      <select id="regionSel">
+        <option value="C">C — US / unlocked</option>
+        <option value="B">B — DE / 20 km/h</option>
+        <option value="A">A — EU variant</option>
+        <option value="D">D — EU variant</option>
+        <option value="E">E — EU variant</option>
+        <option value="F">F — EU variant</option>
+        <option value="custom">custom…</option>
+      </select>
+    </div>
+    <div>
+      <label class="f" for="customRegion">Custom char</label>
+      <input id="customRegion" maxlength="1" class="mono" placeholder="C" disabled>
+    </div>
+    <div>
+      <label class="f" for="speedTarget">Target speed (km/h)</label>
+      <input id="speedTarget" type="number" min="10" max="50" step="1" value="50" class="mono">
+    </div>
+  </div>
+  <div class="row" style="margin-top:9px">
+    <button class="sec sm" data-spd="20">20</button>
+    <button class="sec sm" data-spd="25">25</button>
+    <button class="sec sm" data-spd="30">30</button>
+    <button class="sec sm" data-spd="35">35</button>
+    <button class="sec sm" data-spd="40">40</button>
+    <button class="sec sm" data-spd="45">45</button>
+    <button class="sec sm" data-spd="50">50</button>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <button id="btnApply" disabled>Apply tune</button>
+    <button id="btnStock" class="danger" disabled>Restore stock SN</button>
+  </div>
+  <label class="sw" style="margin-top:10px"><input type="checkbox" id="optReboot" checked><span>Reboot VCU after writing</span></label>
+  <div class="status" id="tuneStatus"></div>
+  <p class="note">Writes SN (cmd 0x18 / reg 0x10) plus gear caps 0x45 + 0x46, each read back. Rebind in the Segway app after an SN change. 50 km/h is above the US cap — the MCU may hold it lower on some builds.</p>
+</section>
+
+<!-- ============ RIDE ============ -->
+<section class="card">
+  <h2>Ride behaviour</h2>
+  <div class="grid">
+    <div>
+      <label class="f" for="accel">Acceleration (0x6E)</label>
+      <select id="accel"><option value="">—</option><option value="1">1 · soft</option><option value="2">2 · stock</option><option value="3">3 · hard</option></select>
+    </div>
+    <div>
+      <label class="f" for="kers">KERS / decel (0x70)</label>
+      <input id="kers" type="number" min="0" max="3" class="mono" placeholder="0–3">
+    </div>
+    <div>
+      <label class="f" for="startSpeed">Start speed (0x42)</label>
+      <input id="startSpeed" type="number" min="0" max="10" class="mono" placeholder="km/h">
+    </div>
+    <div>
+      <label class="f" for="alarm">Alarm sens. (0x74)</label>
+      <input id="alarm" type="number" min="0" max="3" class="mono" placeholder="0–3">
+    </div>
+  </div>
+  <div class="grid" style="margin-top:8px">
+    <label class="sw"><input type="checkbox" id="cruise"><span>Cruise control</span></label>
+    <label class="sw"><input type="checkbox" id="tcs"><span>TCS</span></label>
+    <label class="sw"><input type="checkbox" id="units"><span>Imperial units</span></label>
+  </div>
+  <div class="row" style="margin-top:12px"><button id="btnRide" class="sec" disabled>Write ride settings</button></div>
+  <div class="status" id="rideStatus"></div>
+</section>
+
+<!-- ============ LIGHTS ============ -->
+<section class="card">
+  <h2>Lights &amp; display</h2>
+  <div class="grid">
+    <div>
+      <label class="f" for="ledMode">LED mode (0x5B)</label>
+      <input id="ledMode" type="number" min="0" max="15" class="mono" placeholder="raw">
+    </div>
+    <div>
+      <label class="f" for="tailMode">Tail light (0x5D)</label>
+      <input id="tailMode" type="number" min="0" max="15" class="mono" placeholder="raw">
+    </div>
+  </div>
+  <div class="grid" style="margin-top:8px">
+    <label class="sw"><input type="checkbox" id="underglow"><span>Underglow</span></label>
+    <label class="sw"><input type="checkbox" id="breathing"><span>Breathing tail</span></label>
+    <label class="sw"><input type="checkbox" id="autoHead"><span>Auto headlight</span></label>
+  </div>
+  <div class="row" style="margin-top:12px"><button id="btnLights" class="sec" disabled>Write lights</button></div>
+  <div class="status" id="lightStatus"></div>
+</section>
+
+<!-- ============ TELEMETRY ============ -->
+<section class="card">
+  <h2>Live data</h2>
+  <div class="kv">
+    <div><b>Speed</b><i id="telSpeed">—</i></div>
+    <div><b>Battery</b><i id="telBatt">—</i></div>
+    <div><b>Temp</b><i id="telTemp">—</i></div>
+    <div><b>Odometer</b><i id="telOdo">—</i></div>
+    <div><b>Error</b><i id="telErr">—</i></div>
+  </div>
+  <div class="row" style="margin-top:12px"><button id="btnTel" class="sec" disabled>Start polling</button></div>
+</section>
+
+<!-- ============ TOOLS ============ -->
+<section class="card">
+  <h2>Tools</h2>
+  <div class="grid">
+    <div>
+      <label class="f" for="regBoard">Board</label>
+      <input id="regBoard" class="mono" value="16" maxlength="2">
+    </div>
+    <div>
+      <label class="f" for="regIndex">Register</label>
+      <input id="regIndex" class="mono" value="57" maxlength="2">
+    </div>
+    <div>
+      <label class="f" for="regVal">Value</label>
+      <input id="regVal" class="mono" placeholder="dec">
+    </div>
+  </div>
+  <div class="row" style="margin-top:9px">
+    <button id="btnReadReg" class="sec sm" disabled>Read</button>
+    <button id="btnWriteReg" class="sec sm" disabled>Write</button>
+    <button id="btnDump" class="sec sm" disabled>Dump all</button>
+  </div>
+  <div class="sep"></div>
+  <div class="row">
+    <button id="btnReboot" class="sec sm" disabled>Reboot VCU</button>
+    <button id="btnPowerOff" class="sec sm" disabled>Power off</button>
+    <button id="btnDefaults" class="danger sm" disabled>Factory reset</button>
+  </div>
+  <div class="status" id="toolStatus"></div>
+</section>
+
+<!-- ============ LOG ============ -->
+<section class="card">
+  <h2>Log</h2>
+  <div id="log"></div>
+  <div class="row" style="margin-top:9px">
+    <button id="btnCopyLog" class="sec sm">Copy</button>
+    <button id="btnSaveLog" class="sec sm">Download</button>
+    <button id="btnClearLog" class="sec sm">Clear</button>
+  </div>
+</section>
+
+<footer>
+  Unofficial tool. Writes go to your VCU/MCU — a backup of the serial number is the only undo. Ride legally.<br>
+  Needs Web Bluetooth: Chrome or Edge on Android, Windows, macOS, Linux. iOS needs Bluefy.
+  <details style="margin-top:8px"><summary>Register reference</summary>
+    <p class="note">VCU 0x16: 0x10 SN · 0x17 VCU ver · 0x18 MCU ver · 0x1D fun flags (bit12 cruise, bit3 imperial, bit0 TCS) ·
+    0x1F fun3 (bit2 underglow, bit1 breathing tail, bit0 auto headlight) · 0x42 start speed · 0x45 eco max · 0x46 sport max ·
+    0x55 battery · 0x57 speed · 0x58 error · 0x59 warn · 0x5B LED · 0x5D tail · 0x62 odo · 0x6B temp · 0x6E accel · 0x70 KERS · 0x74 alarm.
+    Board 0x04: 0x51 power (0 off, 1 on, 3 reboot).</p>
+  </details>
+</footer>
+
+</div>
+
+<script type="module">
+/* ================================================================
+   G3 TunR — Ninebot Max G3 (Encryption2, Gen2/Nordic + Gen3/Ninebot)
+   ================================================================ */
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const enc = new TextEncoder(), dec = new TextDecoder();
+const bytes = (...p) => Uint8Array.from(p.flatMap(x => Array.from(x)));
+const pad16 = a => { const b = new Uint8Array(16); b.set(a.slice(0, 16)); return b; };
+const xor = (a, b) => a.map((n, i) => n ^ b[i]);
+const hexs = a => Array.from(a, n => n.toString(16).padStart(2, '0')).join(' ');
+const FW = Uint8Array.from([0x97,0xcf,0xb8,0x02,0x84,0x41,0x43,0xde,0x56,0x00,0x2b,0x3b,0x34,0x78,0x0a,0x5d]);
+const NORDIC = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const CUSTOM = '6e400001-0000-0000-006e-696e65626f74';
+const W_NORDIC = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+const W_CUSTOM = '6e400002-0000-0000-006e-696e65626f74';
+const LS = 'g3tunr.';
+
+/* ---------------- log ---------------- */
+function log(kind, msg) {
+  const el = $('#log');
+  const d = document.createElement('div');
+  d.className = kind;
+  d.textContent = new Date().toLocaleTimeString('en-GB') + '  ' + msg;
+  el.appendChild(d);
+  while (el.children.length > 500) el.firstChild.remove();
+  el.scrollTop = el.scrollHeight;
+}
+const say = (t, c) => { const el = $('#connStatus'); el.innerHTML = t; el.style.color = c || ''; };
+function banner(msg, kind) {
+  const b = $('#banner');
+  if (!msg) { b.style.display = 'none'; return; }
+  b.textContent = msg; b.className = 'banner' + (kind ? ' ' + kind : ''); b.style.display = 'block';
+}
+
+/* ---------------- crypto (Encryption2) ---------------- */
+class Encryption2 {
+  constructor(gen2 = true) { this.staticInput = gen2 ? FW : new Uint8Array(16); this.auth = new Uint8Array(16); this.counter = 0; this.lastRx = -1; this.sn = false; }
+  async setKey(first, second = new Uint8Array(16)) {
+    const raw = new Uint8Array(await crypto.subtle.digest('SHA-1', bytes(pad16(first), pad16(second)))).slice(0, 16);
+    this.key = await crypto.subtle.importKey('raw', raw, 'AES-CBC', false, ['encrypt']);
+  }
+  async block(input) { return new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-CBC', iv: new Uint8Array(16) }, this.key, input)).slice(0, 16); }
+  nonce(c) { return bytes([c >>> 24, (c >>> 16) & 255, (c >>> 8) & 255, c & 255], this.auth.slice(0, 8), [0]); }
+  async mac(plain, nonce) {
+    let x = await this.block(bytes([0x59], nonce, [0, plain.length - 3]));
+    x = await this.block(xor(x, bytes(plain.slice(0, 3), new Uint8Array(13))));
+    for (let i = 3; i < plain.length; i += 16) x = await this.block(xor(x, pad16(plain.slice(i, i + 16))));
+    return x.slice(0, 4);
+  }
+  async cryptPayload(payload, nonce) {
+    const out = new Uint8Array(payload.length);
+    for (let o = 0, idx = 1; o < payload.length; o += 16, idx++) {
+      const stream = await this.block(nonce ? bytes([1], nonce, [0, idx]) : this.staticInput);
+      out.set(xor(payload.slice(o, o + 16), stream), o);
+    }
+    return out;
+  }
+  async encrypt(plain) {
+    if (!this.sn) {
+      const p = plain.slice(3), sum = (~p.reduce((a, b) => a + b, 0)) & 0xffff;
+      return bytes(plain.slice(0, 3), await this.cryptPayload(p, null), [0, 0, sum & 255, sum >>> 8, 0, 0]);
+    }
+    if (this.counter >= 65535) throw new Error('session counter exhausted — reconnect');
+    const ctr = ++this.counter, nonce = this.nonce(ctr);
+    const tag = xor(await this.mac(plain, nonce), (await this.block(bytes([1], nonce, [0, 0]))).slice(0, 4));
+    return bytes(plain.slice(0, 3), await this.cryptPayload(plain.slice(3), nonce), tag, [ctr >>> 8, ctr & 255]);
+  }
+  async decrypt(raw) {
+    if (raw.length < 13 || raw.length !== raw[2] + 13 || raw[0] !== 0x5a || ![0xa5, 0xb5].includes(raw[1])) throw new Error('bad frame');
+    const ctr = (raw.at(-2) << 8) | raw.at(-1), payload = raw.slice(3, -6);
+    if (!ctr) {
+      if (this.sn) throw new Error('plain frame mid-session');
+      const p = await this.cryptPayload(payload, null), sum = (~p.reduce((a, b) => a + b, 0)) & 0xffff;
+      if (raw.at(-6) !== 0 || raw.at(-5) !== 0 || raw.at(-4) !== (sum & 255) || raw.at(-3) !== (sum >>> 8)) throw new Error('checksum');
+      return bytes(raw.slice(0, 3), p);
+    }
+    if (!this.sn || ctr <= this.lastRx) throw new Error('stale counter');
+    const nonce = this.nonce(ctr), plain = bytes(raw.slice(0, 3), await this.cryptPayload(payload, nonce));
+    const tag = xor(await this.mac(plain, nonce), (await this.block(bytes([1], nonce, [0, 0]))).slice(0, 4));
+    let diff = 0; tag.forEach((n, i) => diff |= n ^ raw[raw.length - 6 + i]);
+    if (diff) throw new Error('MAC');
+    this.lastRx = ctr; this.counter = Math.max(this.counter, ctr);
+    return plain;
+  }
+}
+const frame = (board, cmd, index, payload = [], sync = 0xa5) =>
+  bytes([0x5a, sync, payload.length, 0x3e, board, cmd, index], payload);
+class FrameBuffer {
+  constructor() { this.b = new Uint8Array(); }
+  push(chunk) {
+    this.b = bytes(this.b, chunk);
+    const out = [];
+    while (this.b.length) {
+      let pos = -1;
+      for (let i = 0; i < this.b.length - 1; i++) if (this.b[i] === 0x5a && [0xa5, 0xb5].includes(this.b[i + 1])) { pos = i; break; }
+      if (pos < 0) { this.b = this.b.at(-1) === 0x5a ? Uint8Array.of(0x5a) : new Uint8Array(); break; }
+      this.b = this.b.slice(pos);
+      if (this.b.length < 3) break;
+      const len = this.b[2] + 13;
+      if (this.b.length < len) break;
+      out.push(this.b.slice(0, len)); this.b = this.b.slice(len);
+    }
+    return out;
+  }
+}
+
+/* ---------------- client ---------------- */
+class Client {
+  constructor() {
+    this.pending = null; this.authed = false; this.listeners = [];
+    this.rxChain = Promise.resolve(); this.buffer = new FrameBuffer(); this.session = 0;
+  }
+  async choose() {
+    const optionalServices = [NORDIC, CUSTOM, 'generic_access'];
+    this.device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [NORDIC] }, { services: [CUSTOM] }, { namePrefix: '1C' }],
+      optionalServices
+    });
+    return this.device;
+  }
+  async connect(storedKey, nameOv) {
+    this.cancelled = false;
+    try { return await this.open(storedKey, nameOv); }
+    catch (e) {
+      if (e.code !== 'REPAIR' || this.cancelled) throw e;
+      log('err', 'stored key rejected — restarting GATT for a fresh pairing');
+      await this.hardClose();
+      return this.open('', nameOv);
+    }
+  }
+  async hardClose() {
+    const was = !!this.server?.connected;
+    this.cleanup();
+    if (!was) return;
+    await new Promise(res => {
+      let t;
+      const done = () => { clearTimeout(t); this.device.removeEventListener('gattserverdisconnected', done); res(); };
+      this.device.addEventListener('gattserverdisconnected', done);
+      t = setTimeout(done, 1000);
+      try { this.device.gatt.disconnect(); } catch { done(); }
+    });
+  }
+  async open(storedKey, nameOv) {
+    this.closed = false;
+    const epoch = ++this.session;
+    this.dh = () => this.cleanup();
+    this.device.addEventListener('gattserverdisconnected', this.dh);
+    log('hd', 'GATT connect');
+    this.server = await this.device.gatt.connect();
+    if (this.session !== epoch) throw new Error('aborted');
+    const services = await this.server.getPrimaryServices();
+    this.channels = new Map();
+    for (const svc of services.filter(s => [NORDIC, CUSTOM].includes(s.uuid))) {
+      for (const ch of await svc.getCharacteristics()) {
+        this.channels.set(ch.uuid, ch);
+        if (ch.properties.notify || ch.properties.indicate) {
+          const h = ev => {
+            const data = new Uint8Array(ev.target.value.buffer, ev.target.value.byteOffset, ev.target.value.byteLength).slice();
+            for (const p of this.buffer.push(data)) {
+              this.rxChain = this.rxChain.then(async () => {
+                if (epoch !== this.session) return;
+                try {
+                  const d = await this.cipher.decrypt(p);
+                  const pd = this.pending;
+                  if (pd && (d[3] === pd.board || (pd.expect === 0x5b && [4, 0x21].includes(d[3]))) && d[4] === 0x3e &&
+                      d[5] === pd.expect && (pd.index === null || d[6] === pd.index) && (pd.accept === null || d[6] === pd.accept)) {
+                    this.pending = null; clearTimeout(pd.timer);
+                    pd.resolve({ board: d[3], index: d[6], payload: d.slice(7) });
+                  }
+                } catch (e) { log('err', 'rx dropped: ' + e.message); }
+              }).catch(() => {});
+            }
+          };
+          ch.addEventListener('characteristicvaluechanged', h);
+          this.listeners.push([ch, h]);
+          await ch.startNotifications();
+        }
+      }
+    }
+    let name = nameOv.trim() || this.device.name || '';
+    if (!nameOv.trim()) try {
+      const s = await this.server.getPrimaryService('generic_access');
+      name = dec.decode(await s.getCharacteristic('gap.device_name').readValue()).replaceAll('\0', '').trim() || name;
+    } catch {}
+    if (!name) throw new Error('device name missing — type the full BLE name');
+    this.name = name;
+    log('hd', 'BLE name: ' + name);
+
+    let pre;
+    for (const opt of [{ gen2: true, sync: 0xa5, w: W_NORDIC }, { gen2: false, sync: 0xb5, w: W_CUSTOM }]) {
+      const ch = this.channels.get(opt.w);
+      if (!ch) continue;
+      for (const withResp of [false, true]) {
+        if (withResp ? !ch.properties.write : !ch.properties.writeWithoutResponse) continue;
+        await this.rxChain;
+        this.buffer = new FrameBuffer(); this.cipher = new Encryption2(opt.gen2);
+        this.sync = opt.sync; this.writeChar = ch; this.withResp = withResp;
+        await this.cipher.setKey(enc.encode(name), opt.gen2 ? FW : undefined);
+        try { pre = await this.request(4, 0x5b, 0, [], 0x5b, null, 3000); break; }
+        catch (e) { log('err', 'PRE_COMM failed: ' + e.message); if (!this.server?.connected) throw e; }
+      }
+      if (pre) break;
+    }
+    if (!pre) throw new Error('no handshake answer — close the Segway app, power-cycle, retry');
+    if (pre.payload.length < 30) throw new Error('short handshake');
+    this.bleBoard = pre.board || 4;
+    this.snBytes = pre.payload.slice(16, 30);
+    this.cipher.auth = pre.payload.slice(0, 16);
+    this.sn = dec.decode(this.snBytes).replaceAll('\0', '');
+    log('ok', 'PRE_COMM ok, BLE board 0x' + this.bleBoard.toString(16) + ', paired flag ' + pre.index);
+    this.cipher.sn = true; this.cipher.counter = 1;
+
+    let key = storedKey ? Uint8Array.from(storedKey.match(/../g), h => parseInt(h, 16)) : null;
+    if (key && pre.index !== 0) {
+      try { await this.auth(key, epoch); log('ok', 'stored pairing key reused'); this.usedKey = false; return this; }
+      catch (e) {
+        const err = new Error('stored key not confirmed: ' + e.message); err.code = 'REPAIR'; throw err;
+      }
+    }
+    key = await this.register(epoch);
+    await this.auth(key, epoch);
+    return this;
+  }
+  async register(epoch) {
+    const pwd = crypto.getRandomValues(new Uint8Array(16));
+    await this.cipher.setKey(enc.encode(this.name), this.cipher.auth);
+    const until = Date.now() + 60000;
+    const tick = () => say('<b>Press the power button</b> on the scooter · ' + Math.max(0, Math.ceil((until - Date.now()) / 1000)) + ' s');
+    tick(); const iv = setInterval(tick, 1000);
+    try {
+      await this.request(this.bleBoard || 4, 0x5c, 0, pwd, 0x5c, null, 60000, { repeat: 500, accept: 1 });
+      if (epoch !== this.session) throw new Error('aborted');
+      this.newKey = pwd;
+      localStorage.setItem(LS + 'key.' + this.name, Array.from(pwd, n => n.toString(16).padStart(2, '0')).join(''));
+      log('ok', 'power button confirmed, key stored');
+      return pwd;
+    } finally { clearInterval(iv); }
+  }
+  async auth(key, epoch) {
+    await this.cipher.setKey(key, this.cipher.auth);
+    const sn = this.snBytes || new Uint8Array(14);
+    const r = await this.request(this.bleBoard || 4, 0x5d, 0, sn, 0x5d, null, 10000, { repeat: 500, accept: 1 });
+    if (epoch !== this.session) throw new Error('aborted');
+    if (r.index !== 1) throw new Error('auth rejected');
+    this.authed = true;
+    log('ok', 'encrypted session up');
+  }
+  async request(board, cmd, index, payload, expect, matchIndex = index, timeout = 3500, o = {}) {
+    if (this.pending || this.busy) throw new Error('busy');
+    this.busy = true;
+    const epoch = this.session;
+    let op, writer;
+    const reply = new Promise((resolve, reject) => {
+      const done = (fn, v) => { if (op.done) return; op.done = true; clearTimeout(op.timer); if (this.pending === op) this.pending = null; fn(v); };
+      op = { board, expect, index: matchIndex, accept: o.accept ?? null, done: false, resolve: v => done(resolve, v), reject: e => done(reject, e) };
+      op.timer = setTimeout(() => op.reject(new Error('timeout 0x' + cmd.toString(16) + '/0x' + index.toString(16))), timeout);
+      this.pending = op;
+    });
+    const settled = reply.catch(() => {});
+    try {
+      writer = (async () => {
+        do {
+          await this.rxChain;
+          if (op.done) return;
+          if (epoch !== this.session || !this.server?.connected) throw new Error('disconnected');
+          const wire = await this.cipher.encrypt(frame(board, cmd, index, payload, this.sync));
+          if (op.done) return;
+          log('tx', '→ b' + board.toString(16) + ' cmd' + cmd.toString(16) + ' i' + index.toString(16) + ' [' + payload.length + 'B] ' + hexs(wire));
+          if (this.withResp) await this.writeChar.writeValueWithResponse(wire);
+          else await this.writeChar.writeValueWithoutResponse(wire);
+          if (!o.repeat || op.done) return;
+          await Promise.race([sleep(o.repeat), settled]);
+        } while (!op.done);
+      })().catch(e => op.reject(e));
+      const r = await reply;
+      log('rx', '← b' + r.board.toString(16) + ' i' + r.index + ' [' + r.payload.length + 'B] ' + hexs(r.payload));
+      await writer;
+      return r;
+    } finally { await writer; clearTimeout(op.timer); if (this.pending === op) this.pending = null; this.busy = false; }
+  }
+  async read(board, index) {
+    this.guard();
+    const r = await this.request(board, 1, index, [2], 4);
+    if (r.payload.length !== 2) throw new Error('bad register length');
+    return r.payload[0] | (r.payload[1] << 8);
+  }
+  async readMulti(board, index, len) {
+    this.guard();
+    const r = await this.request(board, 1, index, [len], 4);
+    return r.payload;
+  }
+  async write(board, index, value, { reply = true } = {}) {
+    this.guard();
+    if (reply) await this.request(board, 2, index, [value & 255, (value >>> 8) & 255], 5);
+    else await this.send(board, 3, index, [value & 255, (value >>> 8) & 255]);
+  }
+  async send(board, cmd, index, payload) {
+    this.guard();
+    if (this.pending || this.busy) throw new Error('busy');
+    this.busy = true;
+    try {
+      await this.rxChain;
+      const wire = await this.cipher.encrypt(frame(board, cmd, index, payload, this.sync));
+      log('tx', '→ b' + board.toString(16) + ' cmd' + cmd.toString(16) + ' i' + index.toString(16) + ' (no ack)');
+      if (this.withResp) await this.writeChar.writeValueWithResponse(wire);
+      else await this.writeChar.writeValueWithoutResponse(wire);
+    } finally { this.busy = false; }
+  }
+  guard() { if (!this.authed) throw new Error('not connected'); }
+  cleanup() {
+    if (this.closed) return;
+    this.closed = true; this.session++; this.authed = false;
+    if (this.pending) { clearTimeout(this.pending.timer); this.pending.reject(new Error('disconnected')); this.pending = null; }
+    for (const [ch, h] of this.listeners) ch.removeEventListener('characteristicvaluechanged', h);
+    this.listeners = []; if (this.device && this.dh) this.device.removeEventListener('gattserverdisconnected', this.dh);
+    this.cipher = null; this.buffer = new FrameBuffer();
+  }
+  disconnect() { this.cancelled = true; this.cleanup(); this.device?.gatt?.disconnect(); }
+}
+
+/* ---------------- state ---------------- */
+let C = null;
+const setAll = on => {
+  ['btnDisconnect','btnForget','btnApply','btnStock','btnRide','btnLights','btnTel','btnReadReg','btnWriteReg','btnDump','btnReboot','btnPowerOff','btnDefaults']
+    .forEach(id => $('#' + id).disabled = !on);
+};
+const keyOf = n => localStorage.getItem(LS + 'key.' + n);
+
+/* ---------------- version decode ---------------- */
+function bcd(v) {
+  const hi = v >> 8, lo = v & 255;
+  const b = n => (n >> 4) * 10 + (n & 15);
+  if ((hi >> 4) > 9 || (hi & 15) > 9 || (lo >> 4) > 9 || (lo & 15) > 9) return null;
+  return { major: b(hi), minor: b(lo) };
+}
+function checkVersion(vcuWord, mcuWord) {
+  const v = bcd(vcuWord);
+  if (!v) { banner('VCU version unreadable — continuing anyway. Read the version in the Segway app first.', 'bad'); return true; }
+  if (v.major !== 1 || v.minor < 5 || v.minor > 6) {
+    banner('VCU ' + v.major + '.' + v.minor + ' is outside 1.5.8–1.6.x. Reads should work, writes are untested.', 'bad');
+    return true;
+  }
+  if (v.minor === 6) banner('VCU 1.6 confirmed — supported. Stay on 1.6.3; 1.6.4+ re-locks the region.', 'ok');
+  else banner('VCU 1.5.x confirmed — supported.', 'ok');
+  return true;
+}
+
+/* ---------------- connect ---------------- */
+$('#btnConnect').onclick = async () => {
+  if (!navigator.bluetooth) return banner('Web Bluetooth missing. Use Chrome/Edge on Android or desktop, Bluefy on iOS.', 'bad');
+  banner('');
+  const btn = $('#btnConnect');
+  btn.disabled = true;
+  C = new Client();
+  try {
+    await C.choose();
+    $('#devName').textContent = C.device.name || 'unnamed';
+    const stored = keyOf(C.device.name || $('#nameOv').value.trim());
+    say('Connecting…');
+    await C.connect(stored || '', $('#nameOv').value);
+    say('Connected. <b>' + C.name + '</b>', 'var(--green)');
+    setAll(true);
+    $('#keyState').textContent = 'key stored';
+    await refreshDevice();
+  } catch (e) {
+    log('err', e.message);
+    say('Failed: ' + e.message, '#f08a8a');
+    banner('Connection failed: ' + e.message, 'bad');
+    try { C.disconnect(); } catch {}
+    btn.disabled = false;
+  }
+};
+$('#btnDisconnect').onclick = () => { try { C?.disconnect(); } catch {} C = null; setAll(false); $('#btnConnect').disabled = false; say('Disconnected.'); stopPoll(); };
+$('#btnForget').onclick = () => {
+  if (!C) return;
+  localStorage.removeItem(LS + 'key.' + C.name);
+  $('#keyState').textContent = 'no key';
+  log('hd', 'pairing key deleted');
+};
+
+/* ---------------- device ---------------- */
+async function refreshDevice() {
+  if (!C?.authed) return;
+  try {
+    const ble = await C.read(C.bleBoard || 4, 0x01);
+    const vcu = await C.read(0x16, 0x17);
+    const mcu = await C.read(0x16, 0x18);
+    const bms = await C.read(0x07, 0x0e).catch(() => null);
+    const fmt = w => { const v = bcd(w); return v ? v.major + '.' + v.minor : '0x' + w.toString(16); };
+    $('#verBLE').textContent = '0.' + ble;
+    $('#verVCU').textContent = fmt(vcu);
+    $('#verMCU').textContent = fmt(mcu);
+    $('#verBMS').textContent = bms === null ? '—' : '0x' + bms.toString(16);
+    checkVersion(vcu, mcu);
+    const sn = dec.decode(await C.readMulti(0x16, 0x10, 14)).replaceAll('\0', '');
+    $('#snText').value = sn;
+    $('#regionSel').value = 'ABCDEF'.includes(sn[4]) ? sn[4] : 'custom';
+    if ($('#regionSel').value === 'custom') $('#customRegion').value = sn[4] || '';
+    $('#customRegion').disabled = $('#regionSel').value !== 'custom';
+    $('#btnRestoreSn').disabled = !localStorage.getItem(LS + 'sn.orig');
+    $('#keyState').textContent = 'key stored';
+  } catch (e) { log('err', 'refresh: ' + e.message); }
+}
+$('#btnCopySn').onclick = () => navigator.clipboard.writeText($('#snText').value);
+$('#btnBackupSn').onclick = () => {
+  const sn = $('#snText').value;
+  if (!sn || sn.length < 10) return;
+  localStorage.setItem(LS + 'sn.orig', sn);
+  $('#btnRestoreSn').disabled = false;
+  log('ok', 'SN backed up: ' + sn);
+};
+$('#btnRestoreSn').onclick = async () => {
+  const sn = localStorage.getItem(LS + 'sn.orig');
+  if (!sn) return;
+  try { await writeSN(sn); log('ok', 'stock SN restored'); await refreshDevice(); }
+  catch (e) { log('err', e.message); }
+};
+
+/* ---------------- SN + speed ---------------- */
+async function writeSN(sn) {
+  if (sn.length !== 14) throw new Error('SN must be 14 characters');
+  const payload = enc.encode(sn);
+  await C.request(0x16, 0x18, 0x10, payload, 5, 0x10, 6000);
+  const back = dec.decode(await C.readMulti(0x16, 0x10, 14)).replaceAll('\0', '');
+  if (back !== sn) throw new Error('SN readback mismatch: ' + back);
+  $('#snText').value = back;
+  log('ok', 'SN written: ' + back);
+}
+const scaleOf = v => (v > 120 ? 10 : 1);
+async function writeSpeed(kmh) {
+  const raw45 = await C.read(0x16, 0x45), raw46 = await C.read(0x16, 0x46);
+  const s = Math.max(scaleOf(raw45), scaleOf(raw46));
+  const target = Math.round(kmh * s);
+  await C.write(0x16, 0x46, target);
+  await C.write(0x16, 0x45, target);
+  const back = await C.read(0x16, 0x46);
+  if (Math.abs(back - target) > 1) throw new Error('speed readback ' + back + ' vs ' + target);
+  log('ok', 'gear caps set to ' + kmh + ' km/h (raw ' + target + ')');
+}
+$('#regionSel').onchange = e => {
+  const c = e.target.value === 'custom';
+  $('#customRegion').disabled = !c;
+  if (c) $('#customRegion').focus();
+};
+$$('[data-spd]').forEach(b => b.onclick = () => { $('#speedTarget').value = b.dataset.spd; });
+
+$('#btnApply').onclick = async () => {
+  if (!C?.authed) return;
+  const st = $('#tuneStatus'); st.textContent = '';
+  try {
+    const speed = await C.read(0x16, 0x57);
+    if (speed !== 0) throw new Error('scooter must stand still');
+    if (!$('#snText').value || $('#snText').value === '—') throw new Error('SN not read');
+    if (!localStorage.getItem(LS + 'sn.orig')) localStorage.setItem(LS + 'sn.orig', $('#snText').value);
+
+    const rc = $('#regionSel').value === 'custom' ? ($('#customRegion').value || '').toUpperCase() : $('#regionSel').value;
+    const cur = $('#snText').value;
+    if (rc && rc !== cur[4]) {
+      st.textContent = 'writing SN…';
+      await writeSN(cur.slice(0, 4) + rc + cur.slice(5));
+      log('ok', 'region set to ' + rc);
+    } else st.textContent = 'region unchanged';
+
+    st.textContent = 'writing speed cap…';
+    await writeSpeed(Math.min(50, Math.max(10, +$('#speedTarget').value || 50)));
+    st.textContent = 'done — ' + Math.min(50, +$('#speedTarget').value || 50) + ' km/h, region ' + (rc || cur[4]);
+    st.style.color = 'var(--green)';
+    if ($('#optReboot').checked) { await sleep(400); await reboot(); }
+  } catch (e) {
+    st.textContent = 'error: ' + e.message; st.style.color = '#f08a8a'; log('err', e.message);
+  }
+};
+$('#btnStock').onclick = async () => {
+  const sn = localStorage.getItem(LS + 'sn.orig');
+  if (!sn) return;
+  try { await writeSN(sn); await refreshDevice(); $('#tuneStatus').textContent = 'stock SN restored'; }
+  catch (e) { $('#tuneStatus').textContent = 'error: ' + e.message; }
+};
+
+/* ---------------- ride ---------------- */
+const bits = async (idx, mask, want) => {
+  const v = await C.read(0x16, idx);
+  const nv = want ? (v | mask) : (v & ~mask);
+  if (nv !== v) await C.write(0x16, idx, nv);
+  const back = await C.read(0x16, idx);
+  if (!!(back & mask) !== want) throw new Error('0x' + idx.toString(16) + ' not confirmed');
+  return back;
+};
+$('#btnRide').onclick = async () => {
+  const st = $('#rideStatus'); st.textContent = '';
+  const done = [];
+  try {
+    if ((await C.read(0x16, 0x57)) !== 0) throw new Error('scooter must stand still');
+    if ($('#accel').value) { await C.write(0x16, 0x6e, +$('#accel').value); done.push('accel'); }
+    if ($('#kers').value !== '') { await C.write(0x16, 0x70, +$('#kers').value); done.push('kers'); }
+    if ($('#startSpeed').value !== '') { await C.write(0x16, 0x42, +$('#startSpeed').value); done.push('start'); }
+    if ($('#alarm').value !== '') { await C.write(0x16, 0x74, +$('#alarm').value); done.push('alarm'); }
+    await bits(0x1d, 1 << 12, $('#cruise').checked); done.push('cruise');
+    await bits(0x1d, 1 << 0, $('#tcs').checked); done.push('tcs');
+    await bits(0x1d, 1 << 3, $('#units').checked); done.push('units');
+    st.textContent = 'written + verified: ' + done.join(', '); st.style.color = 'var(--green)';
+  } catch (e) { st.textContent = 'error: ' + e.message; st.style.color = '#f08a8a'; log('err', e.message); }
+};
+
+/* ---------------- lights ---------------- */
+$('#btnLights').onclick = async () => {
+  const st = $('#lightStatus'); st.textContent = '';
+  try {
+    await bits(0x1f, 1 << 2, $('#underglow').checked);
+    await bits(0x1f, 1 << 1, $('#breathing').checked);
+    await bits(0x1f, 1 << 0, $('#autoHead').checked);
+    if ($('#ledMode').value !== '') await C.write(0x16, 0x5b, +$('#ledMode').value);
+    if ($('#tailMode').value !== '') await C.write(0x16, 0x5d, +$('#tailMode').value);
+    st.textContent = 'lights written'; st.style.color = 'var(--green)';
+  } catch (e) { st.textContent = 'error: ' + e.message; st.style.color = '#f08a8a'; }
+};
+
+/* ---------------- telemetry ---------------- */
+let poll = null;
+function stopPoll() { if (poll) { clearInterval(poll); poll = null; } $('#btnTel').textContent = 'Start polling'; }
+$('#btnTel').onclick = () => {
+  if (poll) return stopPoll();
+  $('#btnTel').textContent = 'Stop polling';
+  poll = setInterval(async () => {
+    if (!C?.authed || C.busy) return;
+    try {
+      const s = await C.read(0x16, 0x57);
+      $('#telSpeed').textContent = (s / 10).toFixed(1) + ' km/h';
+      $('#telBatt').textContent = (await C.read(0x16, 0x55)) + ' %';
+      $('#telTemp').textContent = ((await C.read(0x16, 0x6b)) / 10).toFixed(1) + ' °C';
+      $('#telOdo').textContent = ((await C.read(0x16, 0x62)) / 10).toFixed(1) + ' km';
+      $('#telErr').textContent = 'E' + (await C.read(0x16, 0x58)) + ' / W' + (await C.read(0x16, 0x59));
+    } catch {}
+  }, 1200);
+};
+
+/* ---------------- tools ---------------- */
+const pv = id => parseInt($('#' + id).value, 16);
+$('#btnReadReg').onclick = async () => {
+  const st = $('#toolStatus');
+  try { const v = await C.read(pv('regBoard'), pv('regIndex')); st.textContent = '0x' + v.toString(16).padStart(4, '0') + ' (' + v + ')'; }
+  catch (e) { st.textContent = 'error: ' + e.message; }
+};
+$('#btnWriteReg').onclick = async () => {
+  const st = $('#toolStatus');
+  try { await C.write(pv('regBoard'), pv('regIndex'), +$('#regVal').value); st.textContent = 'written'; }
+  catch (e) { st.textContent = 'error: ' + e.message; }
+};
+$('#btnDump').onclick = async () => {
+  const st = $('#toolStatus'); st.textContent = 'dumping…';
+  const out = { at: new Date().toISOString(), vcu: {}, mcu: {}, ble: {} };
+  const list = [[0x16, [0x17,0x18,0x1b,0x1d,0x1e,0x1f,0x2f,0x30,0x32,0x42,0x45,0x46,0x55,0x57,0x58,0x59,0x5a,0x5b,0x5d,0x62,0x6b,0x6e,0x70,0x74], 'vcu'],
+                [0x04, [0x01], 'ble']];
+  for (const [b, regs, g] of list) for (const r of regs) {
+    try { out[g]['0x' + r.toString(16)] = '0x' + (await C.read(b, r)).toString(16); } catch {}
+  }
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'g3tunr-dump-' + Date.now() + '.json';
+  a.click();
+  st.textContent = 'dump saved';
+};
+async function reboot() { await C.write(0x04, 0x51, 3, { reply: false }).catch(() => {}); log('hd', 'reboot sent'); }
+$('#btnReboot').onclick = () => reboot().catch(e => log('err', e.message));
+$('#btnPowerOff').onclick = () => C.write(0x04, 0x51, 0, { reply: false }).catch(e => log('err', e.message));
+$('#btnDefaults').onclick = async () => {
+  if (!confirm('Factory reset the VCU? Pairing and settings are lost.')) return;
+  try { await C.send(0x16, 0x80, 0, []); log('ok', 'factory reset sent'); } catch (e) { log('err', e.message); }
+};
+$('#btnCopyLog').onclick = () => navigator.clipboard.writeText($('#log').innerText);
+$('#btnSaveLog').onclick = () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([$('#log').innerText], { type: 'text/plain' }));
+  a.download = 'g3tunr-log-' + Date.now() + '.txt';
+  a.click();
+};
+$('#btnClearLog').onclick = () => $('#log').innerHTML = '';
+
+/* ---------------- boot ---------------- */
+log('hd', 'G3 TunR ready');
+if (!navigator.bluetooth) banner('Web Bluetooth not available in this browser. Use Chrome or Edge (Android/desktop) or Bluefy on iOS.', 'bad');
+</script>
+</body>
+</html>
