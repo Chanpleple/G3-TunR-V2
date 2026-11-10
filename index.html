@@ -93,7 +93,7 @@ details[open] summary{margin-bottom:10px}
 
 <header>
   <h1>G3 <span>TunR</span></h1>
-  <div class="sub">Ninebot Max G3 · MCU 1.6.0 · VCU 1.5.8 – 1.6.x · <span class="chip">v1.0</span></div>
+  <div class="sub">Ninebot Max G3 · MCU 1.6.0 · VCU 1.5.8 – 1.6.x · <span class="chip">v1.1</span></div>
 </header>
 
 <div id="banner" class="banner"></div>
@@ -307,6 +307,7 @@ details[open] summary{margin-bottom:10px}
    G3 TunR — Ninebot Max G3 (Encryption2, Gen2/Nordic + Gen3/Ninebot)
    ================================================================ */
 const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const enc = new TextEncoder(), dec = new TextDecoder();
 const bytes = (...p) => Uint8Array.from(p.flatMap(x => Array.from(x)));
@@ -517,7 +518,7 @@ class Client {
 
     let key = storedKey ? Uint8Array.from(storedKey.match(/../g), h => parseInt(h, 16)) : null;
     if (key && pre.index !== 0) {
-      try { await this.auth(key, epoch); log('ok', 'stored pairing key reused'); this.usedKey = false; return this; }
+      try { await this.auth(key, epoch); log('ok', 'stored pairing key reused'); return this; }
       catch (e) {
         const err = new Error('stored key not confirmed: ' + e.message); err.code = 'REPAIR'; throw err;
       }
@@ -536,10 +537,15 @@ class Client {
       await this.request(this.bleBoard || 4, 0x5c, 0, pwd, 0x5c, null, 60000, { repeat: 500, accept: 1 });
       if (epoch !== this.session) throw new Error('aborted');
       this.newKey = pwd;
-      localStorage.setItem(LS + 'key.' + this.name, Array.from(pwd, n => n.toString(16).padStart(2, '0')).join(''));
+      this.saveKey(pwd);
       log('ok', 'power button confirmed, key stored');
       return pwd;
     } finally { clearInterval(iv); }
+  }
+  saveKey(pwd) {
+    const h = Array.from(pwd, n => n.toString(16).padStart(2, '0')).join('');
+    localStorage.setItem(LS + 'key.' + this.name, h);
+    localStorage.setItem(LS + 'key.__last', h);   // survives an SN / name change
   }
   async auth(key, epoch) {
     await this.cipher.setKey(key, this.cipher.auth);
@@ -625,29 +631,33 @@ class Client {
 
 /* ---------------- state ---------------- */
 let C = null;
-const setAll = on => {
-  ['btnDisconnect','btnForget','btnApply','btnStock','btnRide','btnLights','btnTel','btnReadReg','btnWriteReg','btnDump','btnReboot','btnPowerOff','btnDefaults']
-    .forEach(id => $('#' + id).disabled = !on);
-};
+const CONTROLS = ['btnDisconnect','btnForget','btnApply','btnStock','btnRide','btnLights','btnTel',
+                  'btnReadReg','btnWriteReg','btnDump','btnReboot','btnPowerOff','btnDefaults'];
+const setAll = on => CONTROLS.forEach(id => { const el = $('#' + id); if (el) el.disabled = !on; });
 const keyOf = n => localStorage.getItem(LS + 'key.' + n);
+const lastKey = () => localStorage.getItem(LS + 'key.__last');
 
-/* ---------------- version decode ---------------- */
-function bcd(v) {
-  const hi = v >> 8, lo = v & 255;
-  const b = n => (n >> 4) * 10 + (n & 15);
-  if ((hi >> 4) > 9 || (hi & 15) > 9 || (lo >> 4) > 9 || (lo & 15) > 9) return null;
-  return { major: b(hi), minor: b(lo) };
+/* ---------------- version decode ----------------
+   0x0163 = major 0x01 (BCD) + low byte nibble-packed 6|3 → 1.6.3
+   -------------------------------------------------- */
+function decodeVer(w) {
+  if (!w || w === 0xffff) return null;
+  const hi = (w >> 8) & 0xff, lo = w & 0xff;
+  const bcd = n => (n >> 4) * 10 + (n & 15);
+  const major = bcd(hi), minor = lo >> 4, patch = lo & 15;
+  if ((hi >> 4) > 9 || (hi & 15) > 9 || minor > 9 || patch > 9) return null;
+  return { major, minor, patch, text: major + '.' + minor + '.' + patch };
 }
-function checkVersion(vcuWord, mcuWord) {
-  const v = bcd(vcuWord);
-  if (!v) { banner('VCU version unreadable — continuing anyway. Read the version in the Segway app first.', 'bad'); return true; }
-  if (v.major !== 1 || v.minor < 5 || v.minor > 6) {
-    banner('VCU ' + v.major + '.' + v.minor + ' is outside 1.5.8–1.6.x. Reads should work, writes are untested.', 'bad');
-    return true;
+function checkVersion(w) {
+  const v = decodeVer(w);
+  if (!v) { banner('VCU version unreadable. Check the build in the Segway app before writing.', 'bad'); return; }
+  if (v.major !== 1 || v.minor < 5 || v.minor > 6 || (v.minor === 5 && v.patch < 8)) {
+    banner('VCU ' + v.text + ' is outside the supported 1.5.8 – 1.6.x range. Reads should work, writes are untested.', 'bad');
+    return;
   }
-  if (v.minor === 6) banner('VCU 1.6 confirmed — supported. Stay on 1.6.3; 1.6.4+ re-locks the region.', 'ok');
-  else banner('VCU 1.5.x confirmed — supported.', 'ok');
-  return true;
+  if (v.minor === 6 && v.patch === 3) banner('VCU ' + v.text + ' — target build. Supported.', 'ok');
+  else if (v.minor === 6 && v.patch > 3) banner('VCU ' + v.text + ' — supported, but 1.6.4 and newer tighten the region lock.', 'bad');
+  else banner('VCU ' + v.text + ' — supported.', 'ok');
 }
 
 /* ---------------- connect ---------------- */
@@ -660,7 +670,7 @@ $('#btnConnect').onclick = async () => {
   try {
     await C.choose();
     $('#devName').textContent = C.device.name || 'unnamed';
-    const stored = keyOf(C.device.name || $('#nameOv').value.trim());
+    const stored = keyOf(C.device.name || '') || lastKey();
     say('Connecting…');
     await C.connect(stored || '', $('#nameOv').value);
     say('Connected. <b>' + C.name + '</b>', 'var(--green)');
@@ -675,10 +685,15 @@ $('#btnConnect').onclick = async () => {
     btn.disabled = false;
   }
 };
-$('#btnDisconnect').onclick = () => { try { C?.disconnect(); } catch {} C = null; setAll(false); $('#btnConnect').disabled = false; say('Disconnected.'); stopPoll(); };
+$('#btnDisconnect').onclick = () => {
+  try { C?.disconnect(); } catch {}
+  C = null; setAll(false); $('#btnConnect').disabled = false; $('#keyState').textContent = 'no key';
+  say('Disconnected.'); stopPoll();
+};
 $('#btnForget').onclick = () => {
   if (!C) return;
   localStorage.removeItem(LS + 'key.' + C.name);
+  localStorage.removeItem(LS + 'key.__last');
   $('#keyState').textContent = 'no key';
   log('hd', 'pairing key deleted');
 };
@@ -691,19 +706,18 @@ async function refreshDevice() {
     const vcu = await C.read(0x16, 0x17);
     const mcu = await C.read(0x16, 0x18);
     const bms = await C.read(0x07, 0x0e).catch(() => null);
-    const fmt = w => { const v = bcd(w); return v ? v.major + '.' + v.minor : '0x' + w.toString(16); };
+    const fmt = w => decodeVer(w)?.text || '0x' + w.toString(16);
     $('#verBLE').textContent = '0.' + ble;
     $('#verVCU').textContent = fmt(vcu);
     $('#verMCU').textContent = fmt(mcu);
     $('#verBMS').textContent = bms === null ? '—' : '0x' + bms.toString(16);
-    checkVersion(vcu, mcu);
+    checkVersion(vcu);
     const sn = dec.decode(await C.readMulti(0x16, 0x10, 14)).replaceAll('\0', '');
     $('#snText').value = sn;
     $('#regionSel').value = 'ABCDEF'.includes(sn[4]) ? sn[4] : 'custom';
-    if ($('#regionSel').value === 'custom') $('#customRegion').value = sn[4] || '';
     $('#customRegion').disabled = $('#regionSel').value !== 'custom';
+    if ($('#regionSel').value === 'custom') $('#customRegion').value = sn[4] || '';
     $('#btnRestoreSn').disabled = !localStorage.getItem(LS + 'sn.orig');
-    $('#keyState').textContent = 'key stored';
   } catch (e) { log('err', 'refresh: ' + e.message); }
 }
 $('#btnCopySn').onclick = () => navigator.clipboard.writeText($('#snText').value);
@@ -717,24 +731,24 @@ $('#btnBackupSn').onclick = () => {
 $('#btnRestoreSn').onclick = async () => {
   const sn = localStorage.getItem(LS + 'sn.orig');
   if (!sn) return;
-  try { await writeSN(sn); log('ok', 'stock SN restored'); await refreshDevice(); }
+  try { await writeSN(sn); await refreshDevice(); log('ok', 'stock SN restored'); }
   catch (e) { log('err', e.message); }
 };
 
 /* ---------------- SN + speed ---------------- */
 async function writeSN(sn) {
   if (sn.length !== 14) throw new Error('SN must be 14 characters');
-  const payload = enc.encode(sn);
-  await C.request(0x16, 0x18, 0x10, payload, 5, 0x10, 6000);
+  await C.request(0x16, 0x18, 0x10, enc.encode(sn), 5, 0x10, 6000);
   const back = dec.decode(await C.readMulti(0x16, 0x10, 14)).replaceAll('\0', '');
   if (back !== sn) throw new Error('SN readback mismatch: ' + back);
   $('#snText').value = back;
+  $('#regionSel').value = 'ABCDEF'.includes(back[4]) ? back[4] : 'custom';
   log('ok', 'SN written: ' + back);
 }
 const scaleOf = v => (v > 120 ? 10 : 1);
 async function writeSpeed(kmh) {
-  const raw45 = await C.read(0x16, 0x45), raw46 = await C.read(0x16, 0x46);
-  const s = Math.max(scaleOf(raw45), scaleOf(raw46));
+  const a = await C.read(0x16, 0x45), b = await C.read(0x16, 0x46);
+  const s = Math.max(scaleOf(a), scaleOf(b));
   const target = Math.round(kmh * s);
   await C.write(0x16, 0x46, target);
   await C.write(0x16, 0x45, target);
@@ -747,28 +761,33 @@ $('#regionSel').onchange = e => {
   $('#customRegion').disabled = !c;
   if (c) $('#customRegion').focus();
 };
-$$('[data-spd]').forEach(b => b.onclick = () => { $('#speedTarget').value = b.dataset.spd; });
+$$('[data-spd]').forEach(b => { b.onclick = () => { $('#speedTarget').value = b.dataset.spd; }; });
 
 $('#btnApply').onclick = async () => {
   if (!C?.authed) return;
-  const st = $('#tuneStatus'); st.textContent = '';
+  const st = $('#tuneStatus'); st.textContent = ''; st.style.color = '';
   try {
-    const speed = await C.read(0x16, 0x57);
-    if (speed !== 0) throw new Error('scooter must stand still');
-    if (!$('#snText').value || $('#snText').value === '—') throw new Error('SN not read');
-    if (!localStorage.getItem(LS + 'sn.orig')) localStorage.setItem(LS + 'sn.orig', $('#snText').value);
-
-    const rc = $('#regionSel').value === 'custom' ? ($('#customRegion').value || '').toUpperCase() : $('#regionSel').value;
+    if ((await C.read(0x16, 0x57)) !== 0) throw new Error('scooter must stand still');
     const cur = $('#snText').value;
+    if (!cur || cur === '—') throw new Error('SN not read');
+    if (!localStorage.getItem(LS + 'sn.orig')) {
+      localStorage.setItem(LS + 'sn.orig', cur);
+      $('#btnRestoreSn').disabled = false;
+      log('ok', 'auto-backup before first write: ' + cur);
+    }
+    const rc = $('#regionSel').value === 'custom'
+      ? ($('#customRegion').value || '').toUpperCase()
+      : $('#regionSel').value;
     if (rc && rc !== cur[4]) {
       st.textContent = 'writing SN…';
       await writeSN(cur.slice(0, 4) + rc + cur.slice(5));
       log('ok', 'region set to ' + rc);
     } else st.textContent = 'region unchanged';
 
+    const target = Math.min(50, Math.max(10, +$('#speedTarget').value || 50));
     st.textContent = 'writing speed cap…';
-    await writeSpeed(Math.min(50, Math.max(10, +$('#speedTarget').value || 50)));
-    st.textContent = 'done — ' + Math.min(50, +$('#speedTarget').value || 50) + ' km/h, region ' + (rc || cur[4]);
+    await writeSpeed(target);
+    st.textContent = 'done — ' + target + ' km/h, region ' + (rc || cur[4]);
     st.style.color = 'var(--green)';
     if ($('#optReboot').checked) { await sleep(400); await reboot(); }
   } catch (e) {
@@ -783,16 +802,16 @@ $('#btnStock').onclick = async () => {
 };
 
 /* ---------------- ride ---------------- */
-const bits = async (idx, mask, want) => {
+async function bits(idx, mask, want) {
   const v = await C.read(0x16, idx);
   const nv = want ? (v | mask) : (v & ~mask);
   if (nv !== v) await C.write(0x16, idx, nv);
   const back = await C.read(0x16, idx);
   if (!!(back & mask) !== want) throw new Error('0x' + idx.toString(16) + ' not confirmed');
   return back;
-};
+}
 $('#btnRide').onclick = async () => {
-  const st = $('#rideStatus'); st.textContent = '';
+  const st = $('#rideStatus'); st.textContent = ''; st.style.color = '';
   const done = [];
   try {
     if ((await C.read(0x16, 0x57)) !== 0) throw new Error('scooter must stand still');
@@ -809,7 +828,7 @@ $('#btnRide').onclick = async () => {
 
 /* ---------------- lights ---------------- */
 $('#btnLights').onclick = async () => {
-  const st = $('#lightStatus'); st.textContent = '';
+  const st = $('#lightStatus'); st.textContent = ''; st.style.color = '';
   try {
     await bits(0x1f, 1 << 2, $('#underglow').checked);
     await bits(0x1f, 1 << 1, $('#breathing').checked);
@@ -853,15 +872,14 @@ $('#btnWriteReg').onclick = async () => {
 };
 $('#btnDump').onclick = async () => {
   const st = $('#toolStatus'); st.textContent = 'dumping…';
-  const out = { at: new Date().toISOString(), vcu: {}, mcu: {}, ble: {} };
+  const out = { at: new Date().toISOString(), vcu: {}, ble: {} };
   const list = [[0x16, [0x17,0x18,0x1b,0x1d,0x1e,0x1f,0x2f,0x30,0x32,0x42,0x45,0x46,0x55,0x57,0x58,0x59,0x5a,0x5b,0x5d,0x62,0x6b,0x6e,0x70,0x74], 'vcu'],
                 [0x04, [0x01], 'ble']];
   for (const [b, regs, g] of list) for (const r of regs) {
     try { out[g]['0x' + r.toString(16)] = '0x' + (await C.read(b, r)).toString(16); } catch {}
   }
-  const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' }));
   a.download = 'g3tunr-dump-' + Date.now() + '.json';
   a.click();
   st.textContent = 'dump saved';
@@ -880,7 +898,7 @@ $('#btnSaveLog').onclick = () => {
   a.download = 'g3tunr-log-' + Date.now() + '.txt';
   a.click();
 };
-$('#btnClearLog').onclick = () => $('#log').innerHTML = '';
+$('#btnClearLog').onclick = () => { $('#log').replaceChildren(); };
 
 /* ---------------- boot ---------------- */
 log('hd', 'G3 TunR ready');
