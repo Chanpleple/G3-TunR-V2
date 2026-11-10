@@ -95,7 +95,7 @@ details[open] summary{margin-bottom:10px}
 
 <header>
   <h1>G3 <span>TunR</span></h1>
-  <div class="sub">Ninebot Max G3 · MCU 1.6.0 · VCU 1.5.8 – 1.6.x · <span class="chip">v1.2</span></div>
+  <div class="sub">Ninebot Max G3 · MCU 1.6.0 · VCU 1.5.8 – 1.6.x · <span class="chip">v1.3</span></div>
 </header>
 
 <div id="banner" class="banner"></div>
@@ -114,10 +114,12 @@ details[open] summary{margin-bottom:10px}
     </div>
   </div>
   <div class="row" style="margin-top:8px">
-    <button id="btnForget" class="sec sm" disabled>Forget pairing key</button>
+    <button id="btnReconnect" class="sec sm" disabled>Reconnect</button>
+    <button id="btnForget" class="sec sm" disabled>Forget key</button>
     <span class="chip" id="keyState" style="align-self:center">no key</span>
   </div>
   <label class="sw" style="margin-top:10px"><input type="checkbox" id="showAll"><span>Show all devices (if the scooter is not listed)</span></label>
+  <label class="sw" style="margin-top:8px"><input type="checkbox" id="optAcc" checked><span>Open accessory line + heartbeat</span></label>
   <div class="status" id="connStatus">Scooter off, Segway app fully closed.</div>
   <p class="note">Power on, tap Connect, pick the scooter, then press its power button once when asked. The pairing key stays in this browser.</p>
 </section>
@@ -131,7 +133,7 @@ details[open] summary{margin-bottom:10px}
   </div>
   <div id="selftest" style="margin-top:10px"></div>
   <div class="status" id="diagStatus"></div>
-  <p class="note">Self-test checks the crypto round-trip, the frame splitter and the version decoder. Probe lists every service and characteristic the scooter exposes, without authenticating.</p>
+  <p class="note">Self-test checks the crypto round-trip, the frame splitter and the version decoder. Probe lists every service and characteristic without authenticating.</p>
 </section>
 
 <!-- ============ DEVICE ============ -->
@@ -194,7 +196,7 @@ details[open] summary{margin-bottom:10px}
   </div>
   <label class="sw" style="margin-top:10px"><input type="checkbox" id="optReboot" checked><span>Reboot VCU after writing</span></label>
   <div class="status" id="tuneStatus"></div>
-  <p class="note">Writes SN (cmd 0x18 / reg 0x10) plus gear caps 0x45 + 0x46, each read back. Rebind in the Segway app after an SN change. 50 km/h is above the US cap — the MCU may hold it lower on some builds.</p>
+  <p class="note">Writes SN then gear caps 0x45 + 0x46, each read back. Steps run independently, so one failure does not block the rest. Rebind in the Segway app after an SN change.</p>
 </section>
 
 <!-- ============ RIDE ============ -->
@@ -286,6 +288,7 @@ details[open] summary{margin-bottom:10px}
   </div>
   <div class="sep"></div>
   <div class="row">
+    <button id="btnAcc" class="sec sm" disabled>Open ACC</button>
     <button id="btnReboot" class="sec sm" disabled>Reboot VCU</button>
     <button id="btnPowerOff" class="sec sm" disabled>Power off</button>
     <button id="btnDefaults" class="danger sm" disabled>Factory reset</button>
@@ -309,8 +312,8 @@ details[open] summary{margin-bottom:10px}
   Needs Web Bluetooth: Chrome or Edge on Android, Windows, macOS, Linux. iOS needs Bluefy.
   <details style="margin-top:8px"><summary>Register reference</summary>
     <p class="note">VCU 0x16: 0x10 SN · 0x17 VCU ver · 0x18 MCU ver · 0x1D fun flags (bit12 cruise, bit3 imperial, bit0 TCS) ·
-    0x1F fun3 (bit2 underglow, bit1 breathing tail, bit0 auto headlight) · 0x42 start speed · 0x45 eco max · 0x46 sport max ·
-    0x55 battery · 0x57 speed · 0x58 error · 0x59 warn · 0x5B LED · 0x5D tail · 0x62 odo · 0x6B temp · 0x6E accel · 0x70 KERS · 0x74 alarm.
+    0x1F fun3 (bit2 underglow, bit1 breathing tail, bit0 auto headlight) · 0x20 keepalive · 0x42 start speed · 0x45 eco max · 0x46 sport max ·
+    0x55 battery · 0x57 speed · 0x58 error · 0x59 warn · 0x5B LED · 0x5D tail · 0x62 odo · 0x6B temp · 0x6E accel · 0x70 KERS · 0x74 alarm · 0x79 ACC (0 open, 2 close).
     Board 0x04: 0x51 power (0 off, 1 on, 3 reboot).</p>
   </details>
 </footer>
@@ -431,12 +434,12 @@ class Client {
   constructor() {
     this.pending = null; this.authed = false; this.listeners = [];
     this.rxChain = Promise.resolve(); this.buffer = new FrameBuffer(); this.session = 0;
+    this.keepAcc = true;
   }
   async choose(all) {
-    const optionalServices = ALL_SVCS;
     this.device = await navigator.bluetooth.requestDevice(all
-      ? { acceptAllDevices: true, optionalServices }
-      : { filters: [{ services: [NORDIC] }, { services: [CUSTOM] }, { namePrefix: '1C' }], optionalServices });
+      ? { acceptAllDevices: true, optionalServices: ALL_SVCS }
+      : { filters: [{ services: [NORDIC] }, { services: [CUSTOM] }, { namePrefix: '1C' }], optionalServices: ALL_SVCS });
     return this.device;
   }
   async connect(storedKey, nameOv) {
@@ -464,7 +467,11 @@ class Client {
   async open(storedKey, nameOv) {
     this.closed = false;
     const epoch = ++this.session;
-    this.dh = () => this.cleanup();
+    this.dh = () => {
+      const was = this.authed;
+      this.cleanup();
+      if (was) this.onDrop?.();
+    };
     this.device.addEventListener('gattserverdisconnected', this.dh);
     log('hd', 'GATT connect');
     this.server = await this.device.gatt.connect();
@@ -572,7 +579,23 @@ class Client {
     if (r.index !== 1) throw new Error('auth rejected');
     this.authed = true;
     log('ok', 'encrypted session up');
+    if (this.keepAcc) {
+      await this.acc(true);
+      this.startKeepAlive();
+    }
   }
+  async acc(open) {
+    try { await this.send(0x16, 0x79, 0, open ? [1, 0] : [2, 0]); log('hd', 'ACC ' + (open ? 'opened' : 'closed')); }
+    catch (e) { log('err', 'ACC failed: ' + e.message); }
+  }
+  startKeepAlive() {
+    this.stopKeepAlive();
+    this.ka = setInterval(() => {
+      if (!this.authed || this.busy || !this.server?.connected) return;
+      this.read(0x16, 0x20).catch(() => {});
+    }, 1500);
+  }
+  stopKeepAlive() { if (this.ka) { clearInterval(this.ka); this.ka = null; } }
   async request(board, cmd, index, payload, expect, matchIndex = index, timeout = 3500, o = {}) {
     if (this.pending || this.busy) throw new Error('busy');
     this.busy = true;
@@ -634,21 +657,25 @@ class Client {
       else await this.writeChar.writeValueWithoutResponse(wire);
     } finally { this.busy = false; }
   }
-  guard() { if (!this.authed) throw new Error('not connected'); }
+  guard() {
+    if (!this.authed) throw new Error('session down — press Reconnect');
+    if (!this.server?.connected) throw new Error('link dropped — press Reconnect');
+  }
   cleanup() {
     if (this.closed) return;
     this.closed = true; this.session++; this.authed = false;
+    this.stopKeepAlive();
     if (this.pending) { clearTimeout(this.pending.timer); this.pending.reject(new Error('disconnected')); this.pending = null; }
     for (const [ch, h] of this.listeners) ch.removeEventListener('characteristicvaluechanged', h);
     this.listeners = []; if (this.device && this.dh) this.device.removeEventListener('gattserverdisconnected', this.dh);
     this.cipher = null; this.buffer = new FrameBuffer();
   }
-  disconnect() { this.cancelled = true; this.cleanup(); this.device?.gatt?.disconnect(); }
+  disconnect() { this.cancelled = true; this.stopKeepAlive(); this.cleanup(); this.device?.gatt?.disconnect(); }
 }
 
 /* ---------------- state ---------------- */
 let C = null;
-const CONTROLS = ['btnDisconnect','btnForget','btnApply','btnStock','btnRide','btnLights','btnTel',
+const CONTROLS = ['btnDisconnect','btnForget','btnApply','btnStock','btnRide','btnLights','btnTel','btnAcc',
                   'btnReadReg','btnWriteReg','btnDump','btnReboot','btnPowerOff','btnDefaults'];
 const setAll = on => CONTROLS.forEach(id => { const el = $('#' + id); if (el) el.disabled = !on; });
 const keyOf = n => localStorage.getItem(LS + 'key.' + n);
@@ -703,8 +730,7 @@ $('#btnSelfTest').onclick = async () => {
   await run('gate: 1.6.3 supported', () => { if (isSupported(0x0163) !== true) throw new Error('rejected'); });
   await run('gate: 1.6.4 supported + flagged', () => {
     if (isSupported(0x0164) !== true) throw new Error('rejected');
-    const v = decodeVer(0x0164);
-    if (v.patch !== 4) throw new Error('patch misread');
+    if (decodeVer(0x0164).patch !== 4) throw new Error('patch misread');
   });
   await run('gate: 1.5.8 supported / 1.5.7 not', () => {
     if (isSupported(0x0158) !== true) throw new Error('1.5.8 rejected');
@@ -726,8 +752,7 @@ $('#btnSelfTest').onclick = async () => {
     await x.setKey(enc.encode('SELFTEST'), FW); await y.setKey(enc.encode('SELFTEST'), FW);
     const plain = frame(0x16, 1, 0x57, [2]);
     const wire = await x.encrypt(plain);
-    const out = await y.decrypt(wire);
-    if (hexs(out) !== hexs(plain)) throw new Error('mismatch');
+    if (hexs(await y.decrypt(wire)) !== hexs(plain)) throw new Error('mismatch');
   });
   await run('encrypted round-trip + counter', async () => {
     const x = new Encryption2(true), y = new Encryption2(true);
@@ -738,8 +763,7 @@ $('#btnSelfTest').onclick = async () => {
     const wire = await x.encrypt(plain);
     if (wire.length !== wire[2] + 13) throw new Error('bad wire length');
     if (((wire.at(-2) << 8) | wire.at(-1)) !== 1) throw new Error('counter not 1');
-    const out = await y.decrypt(wire);
-    if (hexs(out) !== hexs(plain)) throw new Error('mismatch');
+    if (hexs(await y.decrypt(wire)) !== hexs(plain)) throw new Error('mismatch');
   });
   await run('tampered frame rejected', async () => {
     const x = new Encryption2(true), y = new Encryption2(true);
@@ -784,13 +808,24 @@ $('#btnProbe').onclick = async () => {
   }
 };
 
-/* ---------------- connect ---------------- */
+/* ---------------- connect / reconnect ---------------- */
+function onDrop() {
+  setAll(false);
+  $('#btnConnect').disabled = false;
+  $('#btnReconnect').disabled = !C?.device;
+  say('Link dropped.', '#f08a8a');
+  banner('Connection lost. Press Reconnect — the scooter drops the link when it idles or the accessory line is closed.', 'bad');
+  log('err', 'gattserverdisconnected');
+}
+
 $('#btnConnect').onclick = async () => {
   if (!navigator.bluetooth) return banner('Web Bluetooth missing. Use Chrome/Edge on Android or desktop, Bluefy on iOS.', 'bad');
   banner('');
   const btn = $('#btnConnect');
   btn.disabled = true;
   C = new Client();
+  C.keepAcc = $('#optAcc').checked;
+  C.onDrop = onDrop;
   try {
     await C.choose($('#showAll').checked);
     $('#devName').textContent = C.device.name || 'unnamed';
@@ -798,7 +833,9 @@ $('#btnConnect').onclick = async () => {
     say('Connecting…');
     await C.connect(stored || '', $('#nameOv').value);
     say('Connected. <b>' + C.name + '</b>', 'var(--green)');
+    banner('');
     setAll(true);
+    $('#btnReconnect').disabled = true;
     $('#keyState').textContent = 'key stored';
     await refreshDevice();
   } catch (e) {
@@ -809,10 +846,26 @@ $('#btnConnect').onclick = async () => {
     btn.disabled = false;
   }
 };
-$('#btnDisconnect').onclick = () => {
+$('#btnReconnect').onclick = async () => {
+  if (!C?.device) return;
+  banner('');
+  say('Reconnecting…');
+  try {
+    await C.connect(keyOf(C.name || '') || lastKey(), '');
+    say('Connected. <b>' + C.name + '</b>', 'var(--green)');
+    setAll(true);
+    $('#btnReconnect').disabled = true;
+    await refreshDevice();
+  } catch (e) {
+    say('Reconnect failed: ' + e.message, '#f08a8a');
+    banner('Reconnect failed: ' + e.message, 'bad');
+  }
+};
+$('#btnDisconnect').onclick = async () => {
+  try { if (C?.authed) await C.acc(false); } catch {}
   try { C?.disconnect(); } catch {}
-  C = null; setAll(false); $('#btnConnect').disabled = false; $('#keyState').textContent = 'no key';
-  say('Disconnected.'); stopPoll();
+  C = null; setAll(false); $('#btnConnect').disabled = false; $('#btnReconnect').disabled = true;
+  $('#keyState').textContent = 'no key'; say('Disconnected.'); stopPoll();
 };
 $('#btnForget').onclick = () => {
   if (!C) return;
@@ -862,7 +915,12 @@ $('#btnRestoreSn').onclick = async () => {
 /* ---------------- SN + speed ---------------- */
 async function writeSN(sn) {
   if (sn.length !== 14) throw new Error('SN must be 14 characters');
-  await C.request(0x16, 0x18, 0x10, enc.encode(sn), 5, 0x10, 6000);
+  const payload = enc.encode(sn);
+  try { await C.request(0x16, 0x18, 0x10, payload, 5, 0x10, 4000); }
+  catch (e) {
+    log('err', 'SN via cmd 0x18 failed (' + e.message + ') — trying generic write');
+    await C.request(0x16, 0x02, 0x10, payload, 5, 0x10, 4000);
+  }
   const back = dec.decode(await C.readMulti(0x16, 0x10, 14)).replaceAll('\0', '');
   if (back !== sn) throw new Error('SN readback mismatch: ' + back);
   $('#snText').value = back;
@@ -889,9 +947,12 @@ $$('[data-spd]').forEach(b => { b.onclick = () => { $('#speedTarget').value = b.
 
 $('#btnApply').onclick = async () => {
   if (!C?.authed) return;
-  const st = $('#tuneStatus'); st.textContent = ''; st.style.color = '';
+  const st = $('#tuneStatus');
+  st.textContent = ''; st.style.color = '';
+  const report = [];
   try {
-    if ((await C.read(0x16, 0x57)) !== 0) throw new Error('scooter must stand still');
+    const spd = await C.read(0x16, 0x57);
+    if (spd > 3) throw new Error('scooter must stand still (reads ' + (spd / 10).toFixed(1) + ' km/h)');
     const cur = $('#snText').value;
     if (!cur || cur === '—') throw new Error('SN not read');
     if (!localStorage.getItem(LS + 'sn.orig')) {
@@ -902,18 +963,22 @@ $('#btnApply').onclick = async () => {
     const rc = $('#regionSel').value === 'custom'
       ? ($('#customRegion').value || '').toUpperCase()
       : $('#regionSel').value;
+
     if (rc && rc !== cur[4]) {
       st.textContent = 'writing SN…';
-      await writeSN(cur.slice(0, 4) + rc + cur.slice(5));
-      log('ok', 'region set to ' + rc);
-    } else st.textContent = 'region unchanged';
+      try { await writeSN(cur.slice(0, 4) + rc + cur.slice(5)); report.push('region ' + rc); }
+      catch (e) { report.push('region FAILED (' + e.message + ')'); log('err', 'region: ' + e.message); }
+    } else report.push('region unchanged');
 
     const target = Math.min(50, Math.max(10, +$('#speedTarget').value || 50));
     st.textContent = 'writing speed cap…';
-    await writeSpeed(target);
-    st.textContent = 'done — ' + target + ' km/h, region ' + (rc || cur[4]);
-    st.style.color = 'var(--green)';
-    if ($('#optReboot').checked) { await sleep(400); await reboot(); }
+    try { await writeSpeed(target); report.push(target + ' km/h'); }
+    catch (e) { report.push('speed FAILED (' + e.message + ')'); log('err', 'speed: ' + e.message); }
+
+    const failed = report.filter(r => r.includes('FAILED')).length;
+    st.textContent = report.join(' · ');
+    st.style.color = failed ? '#f08a8a' : 'var(--green)';
+    if (!failed && $('#optReboot').checked) { await sleep(400); await reboot(); }
   } catch (e) {
     st.textContent = 'error: ' + e.message; st.style.color = '#f08a8a'; log('err', e.message);
   }
@@ -938,7 +1003,7 @@ $('#btnRide').onclick = async () => {
   const st = $('#rideStatus'); st.textContent = ''; st.style.color = '';
   const done = [];
   try {
-    if ((await C.read(0x16, 0x57)) !== 0) throw new Error('scooter must stand still');
+    if ((await C.read(0x16, 0x57)) > 3) throw new Error('scooter must stand still');
     if ($('#accel').value) { await C.write(0x16, 0x6e, +$('#accel').value); done.push('accel'); }
     if ($('#kers').value !== '') { await C.write(0x16, 0x70, +$('#kers').value); done.push('kers'); }
     if ($('#startSpeed').value !== '') { await C.write(0x16, 0x42, +$('#startSpeed').value); done.push('start'); }
@@ -993,6 +1058,10 @@ $('#btnWriteReg').onclick = async () => {
   const st = $('#toolStatus');
   try { await C.write(pv('regBoard'), pv('regIndex'), +$('#regVal').value); st.textContent = 'written'; }
   catch (e) { st.textContent = 'error: ' + e.message; }
+};
+$('#btnAcc').onclick = async () => {
+  const st = $('#toolStatus');
+  try { await C.acc(true); st.textContent = 'ACC opened'; } catch (e) { st.textContent = 'error: ' + e.message; }
 };
 $('#btnDump').onclick = async () => {
   const st = $('#toolStatus'); st.textContent = 'dumping…';
